@@ -50,6 +50,9 @@ export function install(rt) {
     exchangeTurns: state.exchangeTurns,
     questions: state.questions,
     views: state.views ?? {},
+    // Cards waiting in a group chat, keyed by group id: the group view's dock reads them
+    // there, since a member's hidden group Session is never opened.
+    roomCards: rt.roomCardsView?.() ?? {},
     // The team's DSH Agent (at most one): plain dsh Sessions, not Bots.
     agents: Object.values(state.agents),
     // Key names and who may use them; values never leave the host.
@@ -102,6 +105,81 @@ export function install(rt) {
       else throw invalid('Motion must be quiet, normal or lively')
     }
     return rt.save()
+  }
+
+  // A card waiting in a group chat. The group's view answers by group id; the card is
+  // found by its id, or by being the only one in the group (a client that does not know
+  // card ids yet). A member's own chat keeps using state.questions / state.views.
+  const roomCardFor = (sessionId, cardId, kind) => {
+    const room = rt.roomOf(sessionId)
+    if (room === undefined) return undefined
+    const list = rt.roomCardsOf(room.id)
+    const card = rt.roomCardOf(room.id, cardId) ?? (list.length === 1 ? list[0] : undefined)
+    return card !== undefined && card.kind === kind ? { room, card } : undefined
+  }
+
+  // What one answer says in one line, for the group log: the picked labels, the custom
+  // answer, or what a view's controls submitted.
+  const answeredLine = (reply) => {
+    try {
+      const parsed = JSON.parse(reply.text)
+      const first = Array.isArray(parsed?.answers) ? parsed.answers[0] : undefined
+      if (first === undefined) return ''
+      const values = first.values ?? {}
+      if (Array.isArray(values.selected) && values.selected.length > 0) return values.selected.join(', ')
+      if (typeof values.confirmed === 'boolean') return values.confirmed ? 'confirmed' : 'cancelled'
+      if (values.fields !== null && typeof values.fields === 'object') {
+        const fields = Object.entries(values.fields).map(([key, value]) => `${key}: ${value}`).join('; ')
+        if (fields !== '') return fields
+      }
+      if (typeof first.action === 'string') return first.action === '' ? 'submitted' : first.action
+      const picked = [...(Array.isArray(first.selected) ? first.selected : []), ...(typeof first.custom === 'string' && first.custom !== '' ? [first.custom] : [])]
+      return picked.length === 0 ? 'skipped' : picked.join(', ')
+    } catch {
+      return ''
+    }
+  }
+
+  // The answer leaves the queue first, so a second one is refused; a delivery that fails
+  // puts the card back where it was. The answer starts a turn in the asking member's
+  // hidden group Session, whose output posts into the group as a late reply.
+  const answerRoomCard = async ({ room, card }, reply) => {
+    const claimed = rt.dropRoomCard(room.id, card.id)
+    if (claimed === undefined) return fail('This card is no longer open', 'bot/stale')
+    try {
+      await rt.deliverRoomCardNote(room, card, reply.text, {
+        note: card.kind === 'view' ? 'the user answered your view card' : 'the user answered your question card',
+        source: reply.source,
+      })
+    } catch (error) {
+      rt.restoreRoomCard(claimed)
+      if (error?.code === 'bot/stale') return fail(error.message, 'bot/stale')
+      throw error
+    }
+    const what = card.kind === 'view' ? 'View card' : 'Question card'
+    const line = answeredLine(reply)
+    rt.appendRoomAnswer(room, `${what} answered${line === '' ? '' : `: ${line}`}`)
+    await rt.save()
+    return ok(true)
+  }
+
+  // Skipping a group card is not an answer: the asking member is told the user skipped it,
+  // so its task resumes instead of waiting forever. It is never silent.
+  const dismissRoomCard = async ({ room, card }) => {
+    const claimed = rt.dropRoomCard(room.id, card.id)
+    if (claimed === undefined) return fail('This card is no longer open', 'bot/stale')
+    const what = card.kind === 'view' ? 'view card' : 'question card'
+    try {
+      await rt.deliverRoomCardNote(room, card, `The user skipped your ${what} without answering it. Do not ask it again unless the user brings it up; carry on with what you can, or say what you cannot do without it.`, {
+        note: `the user skipped your ${what}`,
+      })
+    } catch (error) {
+      rt.restoreRoomCard(claimed)
+      if (error?.code === 'bot/stale') return fail(error.message, 'bot/stale')
+      throw error
+    }
+    await rt.save()
+    return ok(true)
   }
 
   const handle = async (endpoint, payload, signal) => {
@@ -273,20 +351,26 @@ export function install(rt) {
           return ok(true)
         case 'stop-member-work':
           return ok(await rt.stopMemberWork(String(body.roomId ?? ''), String(body.botId ?? '')))
-        case 'dismiss-question':
+        case 'dismiss-question': {
           await rt.load()
+          const inRoom = roomCardFor(body.sessionId, body.cardId ?? body.questionId, 'question')
+          if (inRoom !== undefined) return await dismissRoomCard(inRoom)
           if (rt.own(state.questions, body.sessionId) !== undefined) {
             delete state.questions[body.sessionId]
             await rt.save()
           }
           return ok(true)
-        case 'dismiss-view':
+        }
+        case 'dismiss-view': {
           await rt.load()
+          const inRoom = roomCardFor(body.sessionId, body.cardId ?? body.viewId, 'view')
+          if (inRoom !== undefined) return await dismissRoomCard(inRoom)
           if (rt.own(state.views, body.sessionId) !== undefined) {
             delete state.views[body.sessionId]
             await rt.save()
           }
           return ok(true)
+        }
         case 'secret-set':
         case 'secret-allow':
         case 'secret-cancel':
@@ -318,6 +402,12 @@ export function install(rt) {
         case 'answer-question': {
           if (typeof body.sessionId !== 'string') return fail('Nothing to send', 'bot/invalid')
           await rt.load()
+          const inRoom = roomCardFor(body.sessionId, body.questionId, 'question')
+          if (inRoom !== undefined) {
+            const reply = questionReply(inRoom.card, body.answer)
+            if (reply === undefined) return fail('Nothing to send', 'bot/invalid')
+            return await answerRoomCard(inRoom, reply)
+          }
           const past = rt.pastOwners.get(body.sessionId)
           const sessionId = rt.botOf(body.sessionId) ? rt.chatOf(body.sessionId) : past && past.roomId === undefined ? rt.chatOf(past.botId) : body.sessionId
           const question = rt.own(state.questions, sessionId)
@@ -341,6 +431,14 @@ export function install(rt) {
         case 'view-reply': {
           if (typeof body.sessionId !== 'string') return fail('Nothing to send', 'bot/invalid')
           await rt.load()
+          const inRoom = roomCardFor(body.sessionId, body.viewId, 'view')
+          if (inRoom !== undefined) {
+            const checkedRoom = validateViewAnswer(inRoom.card.view, body.action, body.values)
+            if (checkedRoom.error !== undefined) return fail(checkedRoom.error, 'bot/invalid')
+            const replyRoom = viewReply(inRoom.card, body.action, body.values)
+            if (replyRoom === undefined) return fail('Nothing to send', 'bot/invalid')
+            return await answerRoomCard(inRoom, replyRoom)
+          }
           const past = rt.pastOwners.get(body.sessionId)
           const sessionId = rt.botOf(body.sessionId) ? rt.chatOf(body.sessionId) : past && past.roomId === undefined ? rt.chatOf(past.botId) : body.sessionId
           const pending = rt.own(state.views, sessionId)

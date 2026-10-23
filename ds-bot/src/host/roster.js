@@ -437,6 +437,8 @@ export function install(rt) {
     for (const member of removed) {
       if (room.seen) delete room.seen[member]
       rt.dropGroupSession(room, member)
+      // Its waiting cards in this group leave with it.
+      rt.dropRoomCards?.({ roomId: room.id, botId: member })
     }
     room.members = members
     if (admin !== (room.admin ?? null)) changes.push(admin ? `made ${rt.botOf(admin).name} the admin` : 'removed the admin')
@@ -482,6 +484,8 @@ export function install(rt) {
     if (room === undefined) throw new Error('Unknown group chat')
     // Before the group's Sessions leave the state, which the archive reads.
     const archived = rt.archiveGroupMemory(room)
+    // Cards waiting in the group go with it; their askers are gone from it too.
+    rt.dropRoomCards?.({ roomId: id })
     for (const botId of Object.keys(room.sessions ?? {})) rt.dropGroupSession(room, botId)
     delete state.rooms[id]
     rt.roomInbox.delete(id)
@@ -549,6 +553,8 @@ export function install(rt) {
       room.members = room.members.filter(member => member !== id)
       if (room.admin === id) room.admin = null
       rt.dropGroupSession(room, id)
+      // A deleted Bot's waiting cards leave its groups with it.
+      rt.dropRoomCards?.({ roomId: room.id, botId: id })
       touched.push(room)
     }
     await followMemberNames(touched)

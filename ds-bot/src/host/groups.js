@@ -177,6 +177,16 @@ export function install(rt) {
     room.log = log.slice(-ROOM_LOG_MAX)
   }
   Object.assign(rt, { keepGroupLine, dropGroupLines })
+  // A line written by something other than a round speaker (today: the user's answer to
+  // a card). It joins a round that is running so the group view shows it at once, and it
+  // stays in the log for later rounds and read_group_chat.
+  rt.appendRoomLine = (room, line, { reply } = {}) => {
+    ensureRoomLog(room)
+    appendRoom(room, line)
+    if (reply !== undefined) {
+      for (const round of rt.roomProgress.values()) if (round.roomId === room.id) round.replies.push(reply)
+    }
+  }
 
   // A member's group Session, created on its first turn there. A new one starts with
   // a fresh look at the log and a brief of the member's own chat; the brief is the
@@ -231,6 +241,9 @@ export function install(rt) {
     const notice = room.notice ? `Group notice (shared instructions for every member):\n${room.notice}` : ''
     if (round.kickoff) return { text: [members, notice, leads ? adminNote(room) : '', roomKickoff(rt.uiLanguage?.())].filter(Boolean).join('\n\n'), files: [] }
     const working = workingIn(room).filter(item => item.bot.id !== member.id)
+    // Cards a member is waiting on: the user answers them above the composer, and the
+    // members at work go on until then.
+    const waitingNames = [...new Set((rt.roomCardsOf?.(room.id) ?? []).map(card => rt.botOf(card.botId)?.name).filter(Boolean))]
     const text = [
       members,
       notice,
@@ -241,6 +254,7 @@ export function install(rt) {
         : 'Nothing new in this round since your last message.',
       round.shown?.includes(member.id) ? '' : referenceNote(round.references),
       working.length > 0 ? `Still at work on what they were asked; each posts here when done: ${working.map(item => `${item.bot.name} (${minutesSince(item.since)} min)`).join(', ')}.` : '',
+      waitingNames.length > 0 ? `Waiting for the user's answer to a question card: ${waitingNames.join(', ')}.` : '',
       `Speaking order for this round: ${round.slots.map(slotLabel).join(' → ')}.`,
       `You are number ${index + 1} of ${round.slots.length}. ${before === 0 ? 'Nobody spoke before you' : `${before} went before you`}${after === 0 ? ', and you are the last.' : `; ${after} after you will see your message.`}`,
       ROOM_REPLY,
@@ -302,7 +316,7 @@ export function install(rt) {
         postInRound(room, round, member, step, Date.now() - startedAt)
       }
       touch()
-      rt.roomWaiters.set(exchangeId, { sessionId, botId: member.id, roomId: room.id, resolve: finish, fail: failure => finish({ failure }), touch, work, say, approval: () => finish({ approval: true }) })
+      rt.roomWaiters.set(exchangeId, { sessionId, botId: member.id, roomId: room.id, resolve: finish, fail: failure => finish({ failure }), touch, work, say, approval: () => finish({ approval: true }), answer: kind => finish({ answer: true, kind }) })
       signal.addEventListener('abort', () => finish(null), { once: true })
     })
     try {
@@ -343,6 +357,14 @@ export function install(rt) {
     return waiters.length > 0
   }
   rt.yieldRoomTurn = (sessionId) => { for (const waiter of waitersOf(sessionId)) waiter.approval() }
+  // The member's turn ended on a card the user has to answer (ask_user / show_view in a
+  // group). Its slot keeps the member's place as `waiting-answer` and the round goes on
+  // without it; the answer later starts a turn of its own in the same group Session.
+  rt.waitRoomTurn = (sessionId) => {
+    const waiters = waitersOf(sessionId)
+    for (const waiter of waiters) waiter.answer?.()
+    return waiters.length > 0
+  }
   // The team's own tools are quick; any other tool is the start of work.
   const QUICK_TOOLS = new Set(TEAM_TOOLS)
   rt.workRoomTurn = (sessionId, tool) => {
@@ -463,6 +485,12 @@ export function install(rt) {
         // The member's turn goes on in the background and posts when it ends.
         slot.status = 'waiting-approval'
         round.replies.push({ kind: 'approval', botId: member.id, name: member.name, color: member.color, time: Date.now() })
+      } else if (reply?.answer) {
+        // The member ended its turn on a card the user has to answer. Its place in the
+        // round stays open; everyone else's turn goes on as usual, and the answer brings
+        // the member back in a turn of its own.
+        slot.status = 'waiting-answer'
+        round.replies.push({ kind: 'answer-pending', botId: member.id, name: member.name, color: member.color, time: Date.now() })
       } else if (reply?.working) {
         slot.status = 'working'
         round.replies.push({ kind: 'working', botId: member.id, name: member.name, color: member.color, time: Date.now() })
@@ -578,7 +606,10 @@ export function install(rt) {
         if (post.reportBack && rt.botOf(post.botId)) void reportRound(room, post, round)
       }
       exec.concludeTurn?.()
-      return JSON.stringify({ replies: round.replies, passed: round.passed, ...(round.failed.length > 0 ? { failed: round.failed } : {}) })
+      // Cards the user still has to answer: the group session knows who waits on what, so
+      // its next round does not read their silence as a pass.
+      const waitingAnswers = (rt.roomCardsOf?.(room.id) ?? []).map(card => ({ botId: card.botId, name: rt.botOf(card.botId)?.name ?? 'a member', kind: card.kind }))
+      return JSON.stringify({ replies: round.replies, passed: round.passed, ...(round.failed.length > 0 ? { failed: round.failed } : {}), ...(waitingAnswers.length > 0 ? { waitingAnswers } : {}) })
     },
   }))
 

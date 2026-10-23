@@ -756,6 +756,17 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
           h('button', { type: 'button', className: 'bt-event-whole', onClick: () => actions.showDetails(sessionId) },
             h(BotMark, { bot, size: 16 }), h('span', { className: 'bt-event-name' }, t(reply.kind === 'working' ? '{name} started on it' : '{name} paused for your approval', { name: bot.name }))))
       }
+      // A member ended its turn on a card: its part of the round waits for the user,
+      // while everyone else went on.
+      if (reply.kind === 'answer-pending') {
+        return h('div', { key: `${reply.botId}-${index}`, className: 'bt-event' },
+          h('button', { type: 'button', className: 'bt-event-whole', onClick: () => actions.showDetails(sessionId) },
+            h(BotMark, { bot, size: 16 }), h('span', { className: 'bt-event-name' }, t('{name} is waiting for your answer', { name: bot.name }))))
+      }
+      // The user's answer itself, joined to a round that was still running.
+      if (reply.kind === 'answer') {
+        return h('div', { key: `answer-${index}`, className: 'bt-event' }, reply.text)
+      }
       if (reply.kind === 'stopped') {
         return h('div', { key: `${reply.botId}-${index}`, className: 'bt-event' }, t("You stopped {name}'s work", { name: bot.name }))
       }

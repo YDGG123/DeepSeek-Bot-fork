@@ -976,6 +976,12 @@ div:has(> nav [class*="_marks"]){display:none!important}
 .bt-q-inline .bt-q{margin:0;max-width:min(550px,86%);order:0}
 .bt-q-dock{width:100%;display:flex;justify-content:center}
 .bt-q-dock .bt-q{margin:0 auto 8px}
+/* A group's cards queue: the chip turns to the other waiting ones, and an old card says
+   how long it has waited. */
+.bt-room-dock{flex-direction:column;align-items:center;gap:6px}
+.bt-room-chip{align-self:center;border:0;background:none;color:inherit;font:inherit;font-size:12px;opacity:.7;cursor:pointer;padding:2px 8px;border-radius:999px}
+.bt-room-chip:hover{opacity:1}
+.bt-room-wait{opacity:.7}
 [class*="_toBottomSlot"]{justify-content:center!important;padding-right:0!important}
 [data-conversation-scroll] [class*="_toBottomSlot"]{bottom:calc(var(--dsh-composer-height,152px) + 8px)!important}
 [class*="_toBottomSlot"]>button{width:36px!important;height:36px!important;margin-top:-36px!important;background:var(--bt-main)!important;color:var(--bt-ink)!important;box-shadow:0 0 0 .5px var(--bt-line-2),0 2px 8px -2px rgba(0,0,0,.12)!important;animation:bt-tobottom-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing},bt-veil-in .16s ease-out;transition:background-color .12s ease,${spring(SPRING_TAP, 'scale')}}

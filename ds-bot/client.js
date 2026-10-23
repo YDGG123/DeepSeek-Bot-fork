@@ -572,6 +572,9 @@ var ZH = {
   "{first} and {second} are waiting for your approval": "{first}、{second} 等你批准",
   "{first}, {second} and {count} more are waiting for your approval": "{first}、{second} 等 {total} 个等你批准",
   "Waiting for your approval": "等你批准",
+  "{name} is waiting for your answer": "{name} 等你回答",
+  "{count} more waiting · show next": "还有 {count} 张等待 · 看下一张",
+  "Waiting for your answer for over 30 minutes": "已等待超过 30 分钟",
   "in its own chat": "在自己的对话里",
   Reject: "拒绝",
   "Allow once": "允许一次",
@@ -1486,9 +1489,9 @@ function teamActions({ call: call2, after, partFor, roster, ui: ui2, live, cards
     updateRoom: (id, patch) => after(call2("update-room", { id, ...patch })),
     send: (sessionId, text) => after(call2("send", { sessionId: partFor(sessionId), text })),
     answerQuestion: (sessionId, questionId, answer) => after(call2("answer-question", { sessionId: partFor(sessionId), questionId, answer })),
-    dismissQuestion: (sessionId) => after(call2("dismiss-question", { sessionId })),
+    dismissQuestion: (sessionId, cardId) => after(call2("dismiss-question", { sessionId: partFor(sessionId), ...cardId ? { cardId } : {} })),
     answerView: (sessionId, viewId, action, values) => after(call2("view-reply", { sessionId: partFor(sessionId), viewId, action, values })),
-    dismissView: (sessionId) => after(call2("dismiss-view", { sessionId: partFor(sessionId) })),
+    dismissView: (sessionId, cardId) => after(call2("dismiss-view", { sessionId: partFor(sessionId), ...cardId ? { cardId } : {} })),
     answerApproval: (id, choice) => after(call2("approval-answer", { id, choice })),
     stopMemberWork: (roomId, botId) => after(call2("stop-member-work", { roomId, botId })),
     // Values go out in these requests and never come back in a response.
@@ -3130,6 +3133,12 @@ div:has(> nav [class*="_marks"]){display:none!important}
 .bt-q-inline .bt-q{margin:0;max-width:min(550px,86%);order:0}
 .bt-q-dock{width:100%;display:flex;justify-content:center}
 .bt-q-dock .bt-q{margin:0 auto 8px}
+/* A group's cards queue: the chip turns to the other waiting ones, and an old card says
+   how long it has waited. */
+.bt-room-dock{flex-direction:column;align-items:center;gap:6px}
+.bt-room-chip{align-self:center;border:0;background:none;color:inherit;font:inherit;font-size:12px;opacity:.7;cursor:pointer;padding:2px 8px;border-radius:999px}
+.bt-room-chip:hover{opacity:1}
+.bt-room-wait{opacity:.7}
 [class*="_toBottomSlot"]{justify-content:center!important;padding-right:0!important}
 [data-conversation-scroll] [class*="_toBottomSlot"]{bottom:calc(var(--dsh-composer-height,152px) + 8px)!important}
 [class*="_toBottomSlot"]>button{width:36px!important;height:36px!important;margin-top:-36px!important;background:var(--bt-main)!important;color:var(--bt-ink)!important;box-shadow:0 0 0 .5px var(--bt-line-2),0 2px 8px -2px rgba(0,0,0,.12)!important;animation:bt-tobottom-in ${SPRING_TAP.duration}ms ${SPRING_TAP.easing},bt-veil-in .16s ease-out;transition:background-color .12s ease,${spring(SPRING_TAP, "scale")}}
@@ -3762,17 +3771,38 @@ function PendingQuestion({ sessionId, question, actions, inline }) {
     });
   };
   const onAnswer = (answer) => run(() => actions.answerQuestion(sessionId, question.id, { selected: answer.selected ?? [], custom: answer.custom ?? "" }));
-  const onDismiss = () => run(() => actions.dismissQuestion(sessionId));
+  const onDismiss = () => run(() => actions.dismissQuestion(sessionId, question.id));
   return (0, import_react5.createElement)(
     "div",
     { className: inline ? "bt-q-inline" : "bt-q-dock" },
     (0, import_react5.createElement)(QuestionView, { key: question.id, question, onAnswer, onDismiss, onInteract: hold, busy, ownAnswer: question.allowCustom === true, raised: !inline })
   );
 }
+var WAIT_NOTE_MS = 30 * 60 * 1e3;
+function RoomQuestionDock({ roomId, useRoster, actions }) {
+  const cards = useRoster((value) => value.roomCards?.[roomId]);
+  const [turn, setTurn] = (0, import_react5.useState)(0);
+  if (cards === void 0 || cards.length === 0) return null;
+  const card = cards[turn % cards.length];
+  const waited = Date.now() - (card.askedAt ?? 0);
+  return (0, import_react5.createElement)(
+    "div",
+    { className: "bt-q-dock bt-room-dock" },
+    cards.length > 1 ? (0, import_react5.createElement)("button", {
+      type: "button",
+      className: "bt-room-chip",
+      onClick: () => setTurn((current) => current + 1)
+    }, t("{count} more waiting · show next", { count: cards.length - 1 })) : null,
+    (0, import_react5.createElement)(PendingQuestion, { key: card.id, sessionId: roomId, question: card, actions, inline: false }),
+    waited >= WAIT_NOTE_MS ? (0, import_react5.createElement)("div", { className: "bt-q-detail bt-room-wait" }, t("Waiting for your answer for over 30 minutes")) : null
+  );
+}
 function QuestionDock({ sessionId, useRoster, useCards, useHeldCards, actions }) {
+  const room2 = useRoster((value) => value.roomsById?.[sessionId]);
   const question = useRoster((value) => value.questions?.[sessionId]);
   const drawn = useCards?.((state) => state[sessionId]?.[question?.callId] > 0) === true;
   const held = useHeldCards?.((state) => state[sessionId]?.[heldCardKey("question", question?.id)] > 0) === true;
+  if (room2 !== void 0) return (0, import_react5.createElement)(RoomQuestionDock, { roomId: sessionId, useRoster, actions });
   if (question === void 0 || question.callId && drawn && !held) return null;
   return (0, import_react5.createElement)(PendingQuestion, { key: JSON.stringify([sessionId, question.id]), sessionId, question, actions, inline: false });
 }
@@ -4322,7 +4352,7 @@ function PendingView({ sessionId, view, actions, inline }) {
   };
   const onDismiss = () => {
     setAnswered(view.id);
-    void Promise.resolve(actions.dismissView(sessionId)).catch(() => setAnswered(null));
+    void Promise.resolve(actions.dismissView(sessionId, view.id)).catch(() => setAnswered(null));
   };
   return (0, import_react6.createElement)(
     "div",
@@ -4344,10 +4374,32 @@ function WidgetCell({ sessionId, callId, args, done, isError, roster, actions, h
   }
   return (0, import_react6.createElement)("div", { className: "bt-q-inline" }, (0, import_react6.createElement)(WidgetCard, { title: shown.title, view: blueprint }));
 }
+var ROOM_WAIT_NOTE_MS = 30 * 60 * 1e3;
+function RoomViewDock({ roomId, useRoster, actions }) {
+  const all = useRoster((value) => value.roomCards?.[roomId]);
+  const [turn, setTurn] = (0, import_react6.useState)(0);
+  const cards = (all ?? []).filter((card2) => card2.kind === "view");
+  if (cards.length === 0) return null;
+  const card = cards[turn % cards.length];
+  const waited = Date.now() - (card.askedAt ?? 0);
+  return (0, import_react6.createElement)(
+    "div",
+    { className: "bt-q-dock bt-room-dock" },
+    cards.length > 1 ? (0, import_react6.createElement)("button", {
+      type: "button",
+      className: "bt-room-chip",
+      onClick: () => setTurn((current) => current + 1)
+    }, t("{count} more waiting · show next", { count: cards.length - 1 })) : null,
+    (0, import_react6.createElement)(PendingView, { key: card.id, sessionId: roomId, view: card, actions, inline: false }),
+    waited >= ROOM_WAIT_NOTE_MS ? (0, import_react6.createElement)("div", { className: "bt-q-detail bt-room-wait" }, t("Waiting for your answer for over 30 minutes")) : null
+  );
+}
 function WidgetDock({ sessionId, useRoster, useCards, useHeldCards, actions }) {
+  const room2 = useRoster((value) => value.roomsById?.[sessionId]);
   const view = useRoster((value) => value.views?.[sessionId]);
   const drawn = useCards?.((state) => state[sessionId]?.[view?.callId] > 0) === true;
   const held = useHeldCards?.((state) => state[sessionId]?.[heldCardKey("view", view?.id)] > 0) === true;
+  if (room2 !== void 0) return (0, import_react6.createElement)(RoomViewDock, { roomId: sessionId, useRoster, actions });
   if (view === void 0 || view.callId && drawn && !held) return null;
   return (0, import_react6.createElement)(PendingView, { sessionId, view, actions, inline: false });
 }
@@ -5707,6 +5759,21 @@ function GroupReplies({ sessionId, callId, done, content, roster, actions, useUi
             (0, import_react9.createElement)("span", { className: "bt-event-name" }, t(reply.kind === "working" ? "{name} started on it" : "{name} paused for your approval", { name: bot.name }))
           )
         );
+      }
+      if (reply.kind === "answer-pending") {
+        return (0, import_react9.createElement)(
+          "div",
+          { key: `${reply.botId}-${index}`, className: "bt-event" },
+          (0, import_react9.createElement)(
+            "button",
+            { type: "button", className: "bt-event-whole", onClick: () => actions.showDetails(sessionId) },
+            (0, import_react9.createElement)(BotMark, { bot, size: 16 }),
+            (0, import_react9.createElement)("span", { className: "bt-event-name" }, t("{name} is waiting for your answer", { name: bot.name }))
+          )
+        );
+      }
+      if (reply.kind === "answer") {
+        return (0, import_react9.createElement)("div", { key: `answer-${index}`, className: "bt-event" }, reply.text);
       }
       if (reply.kind === "stopped") {
         return (0, import_react9.createElement)("div", { key: `${reply.botId}-${index}`, className: "bt-event" }, t("You stopped {name}'s work", { name: bot.name }));
