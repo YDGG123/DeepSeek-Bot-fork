@@ -1284,12 +1284,13 @@ function lookOf(bot) {
 }
 var SHAPES = {};
 for (const [id, character] of Object.entries(CHARACTERS)) {
-  const layers = [
-    ...(character.paints ?? []).map(([d, fill2, opacity]) => `<path d="${d}" fill="${fill2}" fill-opacity="${opacity}"/>`),
-    `<path d="${character.shade}" fill="#000" fill-opacity=".14"/>`,
-    `<path d="${character.light}" fill="#fff" fill-opacity=".16"/>`
-  ].join("");
-  SHAPES[id] = { label: character.label ?? id[0].toUpperCase() + id.slice(1), size: 100, path: character.body, layers, eyes: character.eyes };
+  const layerDefs = [
+    ...(character.paints ?? []).map(([d, fill2, opacity]) => ({ d, fill: fill2, opacity })),
+    { d: character.shade, fill: "#000", opacity: 0.14 },
+    { d: character.light, fill: "#fff", opacity: 0.16 }
+  ];
+  const layers = layerDefs.map(({ d, fill: fill2, opacity }) => `<path d="${d}" fill="${fill2}" fill-opacity="${opacity}"/>`).join("");
+  SHAPES[id] = { label: character.label ?? id[0].toUpperCase() + id.slice(1), size: 100, path: character.body, layers, layerDefs, eyes: character.eyes };
 }
 var hasShape = (id) => typeof id === "string" && Object.hasOwn(SHAPES, id);
 var shapeId = (id) => hasShape(id) ? id : FALLBACK_SHAPE;

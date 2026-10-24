@@ -32,7 +32,8 @@ const glyphOf = (look) => {
     color: look.color,
     size: def.size,
     path: def.path ?? null,
-    layers: def.layers ?? '',
+    // 结构化层，不发 SVG 标记串：手机端只消费数据，不解析字符串。
+    layers: (def.layerDefs ?? []).map(({ d, fill, opacity }) => ({ d, fill, opacity })),
     eyes: def.eyes ?? [],
   }
 }

@@ -78,12 +78,15 @@ export function lookOf(bot) {
 // `size` box and `eyes` lists the two capsules.
 export const SHAPES = {}
 for (const [id, character] of Object.entries(CHARACTERS)) {
-  const layers = [
-    ...(character.paints ?? []).map(([d, fill, opacity]) => `<path d="${d}" fill="${fill}" fill-opacity="${opacity}"/>`),
-    `<path d="${character.shade}" fill="#000" fill-opacity=".14"/>`,
-    `<path d="${character.light}" fill="#fff" fill-opacity=".16"/>`,
-  ].join('')
-  SHAPES[id] = { label: character.label ?? id[0].toUpperCase() + id.slice(1), size: 100, path: character.body, layers, eyes: character.eyes }
+  // 同一份几何两种视图：`layerDefs` 给需要结构化数据的读者（名册发布给手机），
+  // `layers` 是电脑端渲染用的 SVG 标记串。层序与明暗值只在这里定义一次。
+  const layerDefs = [
+    ...(character.paints ?? []).map(([d, fill, opacity]) => ({ d, fill, opacity })),
+    { d: character.shade, fill: '#000', opacity: 0.14 },
+    { d: character.light, fill: '#fff', opacity: 0.16 },
+  ]
+  const layers = layerDefs.map(({ d, fill, opacity }) => `<path d="${d}" fill="${fill}" fill-opacity="${opacity}"/>`).join('')
+  SHAPES[id] = { label: character.label ?? id[0].toUpperCase() + id.slice(1), size: 100, path: character.body, layers, layerDefs, eyes: character.eyes }
 }
 export const hasShape = id => typeof id === 'string' && Object.hasOwn(SHAPES, id)
 export const shapeId = id => (hasShape(id) ? id : FALLBACK_SHAPE)

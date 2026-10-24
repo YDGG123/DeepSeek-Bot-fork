@@ -157,7 +157,18 @@ test('glyph 与电脑端同一张 SHAPES 表，不是第二份数据', async (t)
     assert.equal(entry.glyph.size, def.size)
     // 逐字段同源：手机画的就是桌面这张表里的几何。
     assert.equal(entry.glyph.path, def.path)
-    assert.equal(entry.glyph.layers, def.layers)
+    // layers 必须是结构化数组（不是 SVG 标记串）：手机端只消费数据、不解析字符串。
+    assert.ok(Array.isArray(entry.glyph.layers))
+    assert.ok(entry.glyph.layers.length > 0)
+    for (const layer of entry.glyph.layers) {
+      assert.equal(typeof layer.d, 'string')
+      assert.ok(layer.d.length > 0)
+      assert.equal(typeof layer.fill, 'string')
+      assert.match(layer.fill, /^#[0-9a-fA-F]{3,8}$/)
+      assert.equal(typeof layer.opacity, 'number')
+    }
+    assert.deepEqual(entry.glyph.layers, def.layerDefs)
+    assert.equal(typeof entry.glyph.layers, 'object')
     assert.deepEqual(entry.glyph.eyes, def.eyes)
   }
   // 三层兜底的第 2 层：有自定义位图时让位，手机该看到用户自己的照片。
