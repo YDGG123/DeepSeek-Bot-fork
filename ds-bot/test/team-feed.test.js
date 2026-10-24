@@ -167,7 +167,7 @@ test('glyph 与电脑端同一张 SHAPES 表，不是第二份数据', async (t)
       assert.match(layer.fill, /^#[0-9a-fA-F]{3,8}$/)
       assert.equal(typeof layer.opacity, 'number')
     }
-    assert.deepEqual(entry.glyph.layers, def.layerDefs)
+    assert.deepEqual(entry.glyph.layers.map(layer => ({ ...layer })), def.layerDefs.map(layer => ({ ...layer })))
     assert.equal(typeof entry.glyph.layers, 'object')
     assert.deepEqual(entry.glyph.eyes, def.eyes)
   }
