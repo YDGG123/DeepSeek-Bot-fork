@@ -124,8 +124,10 @@ export function install(rt) {
       if (view !== undefined) cards.set(view.id, viewCard(meta(view.id, view.askedAt, bot.id, chat), view))
       for (const request of state.secretRequests?.[bot.id] ?? []) {
         if (request.status !== 'pending') continue
+        // A key card asked in a group answers by group id; the hidden Session stays internal.
+        const inRoom = request.roomId === undefined ? undefined : rt.roomOf(request.roomId)
         cards.set(request.id, {
-          ...meta(request.id, request.askedAt, bot.id, request.sessionId ?? chat),
+          ...meta(request.id, request.askedAt, bot.id, inRoom === undefined ? request.sessionId ?? chat : inRoom.id, inRoom?.id),
           kind: 'secret',
           // Values never leave the host; only what the card is for.
           secret: { name: String(request.name ?? ''), ...(request.purpose ? { description: String(request.purpose) } : {}), save: true },
@@ -208,6 +210,12 @@ export function install(rt) {
     // The user answered this card; the gateway shows `card.answered`, not `card.cleared`.
     answered(id) {
       if (typeof id === 'string') answered.add(id)
+      pending = true
+      schedule(0)
+    },
+    // A write that failed puts the card back: the next frame must not call it answered.
+    unanswered(id) {
+      answered.delete(id)
       pending = true
       schedule(0)
     },

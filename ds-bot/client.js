@@ -4546,9 +4546,9 @@ function SecretHead({ bot, title, detail, name, onClose }) {
     onClose ? (0, import_react7.createElement)("button", { type: "button", className: "bt-q-x", "aria-label": t("Cancel the request"), title: t("Cancel"), onClick: onClose }, (0, import_react7.createElement)(CloseIcon)) : null
   );
 }
-function SecretCard({ sessionId, bot, request, roster, actions, inline = false }) {
+function SecretCard({ sessionId, bot, request, roster, actions, inline = false, defaultScope = "all" }) {
   const [value, setValue] = (0, import_react7.useState)("");
-  const [scope, setScope] = (0, import_react7.useState)("all");
+  const [scope, setScope] = (0, import_react7.useState)(defaultScope);
   const [replacing, setReplacing] = (0, import_react7.useState)(false);
   const [busy, setBusy] = (0, import_react7.useState)(false);
   const [error, setError] = (0, import_react7.useState)("");
@@ -4656,10 +4656,42 @@ function SecretToolCell({ sessionId, callId, name, done, content, roster, action
   }
   return null;
 }
+var ROOM_SECRET_WAIT_MS = 30 * 60 * 1e3;
+function RoomSecretDock({ roomId, useRoster, actions }) {
+  const roster = useRoster((value) => value);
+  const cards = useRoster((value) => value.roomCards?.[roomId]);
+  const [turn, setTurn] = (0, import_react7.useState)(0);
+  const waiting = (cards ?? []).filter((card2) => card2.kind === "secret");
+  if (waiting.length === 0) return null;
+  const card = waiting[turn % waiting.length];
+  const bot = roster.byId[card.botId];
+  if (!bot) return null;
+  const request = {
+    id: card.id,
+    kind: card.requestKind === "allow" ? "allow" : "fill",
+    name: card.name,
+    purpose: card.purpose,
+    status: "pending"
+  };
+  const waited = Date.now() - (card.askedAt ?? 0);
+  return (0, import_react7.createElement)(
+    "div",
+    { className: "bt-q-dock bt-secret-dock bt-room-dock" },
+    waiting.length > 1 ? (0, import_react7.createElement)("button", {
+      type: "button",
+      className: "bt-room-chip",
+      onClick: () => setTurn((current) => current + 1)
+    }, t("{count} more waiting · show next", { count: waiting.length - 1 })) : null,
+    (0, import_react7.createElement)(SecretCard, { key: card.id, sessionId: roomId, bot, request, roster, actions, defaultScope: "bot" }),
+    waited >= ROOM_SECRET_WAIT_MS ? (0, import_react7.createElement)("div", { className: "bt-q-detail bt-room-wait" }, t("Waiting for your answer for over 30 minutes")) : null
+  );
+}
 function SecretDock({ sessionId, useRoster, useCards, useHeldCards, actions }) {
   const roster = useRoster((value) => value);
+  const room2 = useRoster((value) => value.roomsById?.[sessionId]);
   const shown = useCards?.((state) => state[sessionId]) ?? NONE;
   const held = useHeldCards?.((state) => state[sessionId]) ?? NONE;
+  if (room2 !== void 0) return (0, import_react7.createElement)(RoomSecretDock, { roomId: sessionId, useRoster, actions });
   const bot = roster.byId[sessionId];
   if (!bot || currentPart(bot) !== sessionId) return null;
   const drawn = (entry) => entry.callId && entry.sessionId === sessionId && shown[entry.callId] > 0 && !(held[heldCardKey("secret", entry.id)] > 0);

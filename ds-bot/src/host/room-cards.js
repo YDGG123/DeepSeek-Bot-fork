@@ -18,6 +18,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 // different questions from one member are both kept: a member that asked, was mentioned
 // again and asked something else has two legitimate cards waiting.
 function cardKey(card) {
+  if (card.kind === 'secret') return JSON.stringify(['secret', card.name, card.requestKind ?? 'fill'])
   return card.kind === 'view'
     ? JSON.stringify(['view', card.title, card.view])
     : JSON.stringify(['question', card.question, card.detail ?? '', card.options, card.multiSelect === true, card.allowCustom === true])

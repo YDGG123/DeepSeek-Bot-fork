@@ -194,7 +194,7 @@ export function install(rt) {
     for (const [roomId, cards] of Object.entries(state.roomCards)) {
       const room = own(state.rooms, roomId)
       const kept = room === undefined || !Array.isArray(cards) ? [] : cards.filter(card => card !== null && typeof card === 'object'
-        && typeof card.id === 'string' && (card.kind === 'question' || card.kind === 'view')
+        && typeof card.id === 'string' && (card.kind === 'question' || card.kind === 'view' || card.kind === 'secret')
         && own(state.bots, card.botId) !== undefined && room.members.includes(card.botId))
       if (kept.length === 0) {
         delete state.roomCards[roomId]

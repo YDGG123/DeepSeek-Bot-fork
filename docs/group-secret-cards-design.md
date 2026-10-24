@@ -190,3 +190,32 @@ commit(notes)                                             // note 投回隐藏�
 | `test/group-secret-cards.test.js`（新增） | §8 的 10 条 |
 
 > 注：`state.roomCards` 迁移当前在 `store.js` 里只接受 `question|view`；落码时放宽到 `secret`，并保持旧 state 兼容。
+
+---
+
+## 11. 落码记录与评审修正（2026-10-24）
+
+评审提出的 5 条已全部落入实现：
+
+| # | 评审点 | 落法 |
+|---|---|---|
+| 1 | `tell` 房间分支必须与 own chat 同语义（不抛） | `deliverRoomCardNote` 包在 Promise 链里 catch + warn；值已落盘优先于通知，note 丢失不阻塞收口 |
+| 2 | scope 三分支不能照抄伪代码 | 保留 `existing===undefined \|\| kind==='fill'` → `bot/all`；`allow + existing` → 追加 scope；**只在群内缺省值上改为 `'bot'`** |
+| 3 | `dropRoomCard` 返回值要接住 | `claimed` 直接用于失败回滚的 `restoreRoomCard` |
+| 4 | 回滚不完整（secrets 内存） | 失败时恢复/删除内存条目 + `changed()` 重算 redactor/shellEnv + **再 `persist()` 一次把已写盘的值抹回**；并新增 `cardFeed.unanswered(id)` 撤销「已答」标记 |
+| 5 | `trimRequests` 会逐出 pending | 先逐 settled；群内 pending 只在**随卡一起**逐出时取消（`status='canceled'` + `dropRoomCard`），不再留悬空卡 |
+
+其它落地细节：
+
+- 新增 `rt.cancelRoomSecretRequests({roomId, botId})`，由 `roster.js` 的删群 / 移出成员 / 删 Bot 三处调用；清理路径**不投 note**（提问者已不在该群）。
+- `reconcile` 对群内 pending 卡同样收口：settle + 删镜像卡 + `cardFeed.answered` + note 投到该 request 的群会话。
+- `secret-cancel` 只 `save` 不 `persist`（secrets.json 无变化），note 投群；失败恢复 request 状态与卡。
+- 手机投影：群密钥卡 `sessionId === roomId`、带 `roomId`，`secret` 只有 `name/description/save`。
+- 桌面 `SecretCard` 新增 `defaultScope`，`RoomSecretDock` 显式传 `'bot'`；own chat 仍默认 `'all'`（不变）。
+
+### 自验（Node v22.20.0）
+
+- `npm test`：**875 用例 / 873 通过 / 2 跳过 / 0 失败**（新增 `test/group-secret-cards.test.js` 10 例；`secrets.test.js` 的群内拒绝用例按新语义改写）
+- `npm run lint`：0 错误、11 警告（与基线一致）
+- `node scripts/build-client.mjs --check`：exit 0（客户端已重建）
+- 值不外泄断言：`state.roomCards`、`cardFeed.snapshot()`、群日志三处序列化全文搜索值串均为 false；`secrets.json` 在失败回滚后亦不含值。
