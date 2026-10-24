@@ -8,9 +8,10 @@
 // starts a new turn in the member's hidden group Session, whose output posts back into
 // the group through the usual late-reply path.
 //
-// Cards live in `state.roomCards[roomId]`, ordered by when they were asked. Key cards
-// (request_secret) are not part of this: they wait in state.secretRequests per Bot and
-// a group turn still cannot show them.
+// Cards live in `state.roomCards[roomId]`, ordered by when they were asked. A key card
+// (request_secret) waits in `state.secretRequests` per Bot and is mirrored here under the
+// same id, so the group dock can show it; the request stays the source of truth for who
+// may use the key, and the mirror only for what the group is waiting on.
 import { randomUUID } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 

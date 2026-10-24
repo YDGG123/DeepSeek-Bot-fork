@@ -230,6 +230,78 @@ test('deleting the group cancels a waiting key request and drops its card', asyn
   assert.equal(host.rt.state.roomCards.r1, undefined)
 })
 
+test('a member removed from the group takes its waiting key request and card along', async (t) => {
+  const host = await start(t)
+  await host.tool('request_secret', { name: 'DEMO_TOKEN', purpose: 'build' }, 'gb', { callId: 's1', concludeTurn() {} })
+  const removed = await host.call('update-room', { id: 'r1', members: ['a', 'c'] })
+  assert.equal(removed.ok, true)
+  assert.equal(requestsOf(host)[0].status, 'canceled')
+  assert.equal(host.rt.state.roomCards.r1, undefined)
+  assert.deepEqual(host.rt.teamFeed.snapshot().pending.filter(entry => entry.kind === 'secret'), [])
+})
+
+test('a deleted Bot takes its waiting key request and card along', async (t) => {
+  const host = await start(t)
+  await host.tool('request_secret', { name: 'DEMO_TOKEN', purpose: 'build' }, 'gb', { callId: 's1', concludeTurn() {} })
+  const deleted = await host.call('delete-bot', { id: 'b' })
+  assert.equal(deleted.ok, true)
+  assert.equal(host.rt.state.secretRequests.b, undefined)
+  assert.equal(host.rt.state.roomCards.r1, undefined)
+  assert.deepEqual(host.rt.teamFeed.snapshot().pending.filter(entry => entry.kind === 'secret'), [])
+})
+
+test('trim never evicts a group key card: the cap bends instead', async (t) => {
+  const host = await start(t)
+  // Twenty pending group requests, each with its mirror card: every one may still be answered.
+  const now = Date.now()
+  host.rt.state.secretRequests.b = Array.from({ length: 20 }, (_, at) => ({ id: `k${at}`, sessionId: 'gb', roomId: 'r1', name: `KEY_${at}`, purpose: 'p', kind: 'fill', status: 'pending', askedAt: now + at }))
+  host.rt.state.roomCards.r1 = host.rt.state.secretRequests.b.map(request => ({ id: request.id, kind: 'secret', botId: 'b', roomId: 'r1', askedAt: request.askedAt, name: request.name, purpose: 'p', requestKind: 'fill' }))
+  await host.tool('request_secret', { name: 'DEMO_TOKEN', purpose: 'build' }, 'gb', { callId: 's1', concludeTurn() {} })
+  const list = requestsOf(host)
+  assert.equal(list.length, 21)
+  assert.equal(list.filter(request => request.status === 'pending').length, 21)
+  assert.equal(cardsOf(host).length, 21)
+  // The settled records go first: no group request is dropped while a plain one could be.
+  assert.equal(list.some(request => request.status === 'canceled'), false)
+})
+
+test('trim drops an evicted record together with the card it still had', async (t) => {
+  const host = await start(t)
+  const now = Date.now()
+  // A settled group record that kept its mirror card (a crash between the two writes can
+  // leave exactly this shape). Trim must not leave the card behind, unanswerable.
+  host.rt.state.secretRequests.b = [{ id: 'gone', sessionId: 'gb', roomId: 'r1', name: 'OLD_KEY', purpose: 'p', kind: 'fill', status: 'saved', askedAt: now, settledAt: now + 1 }]
+  host.rt.state.roomCards.r1 = [{ id: 'gone', kind: 'secret', botId: 'b', roomId: 'r1', askedAt: now, name: 'OLD_KEY', purpose: 'p', requestKind: 'fill' }]
+  for (let at = 0; at < 19; at += 1) {
+    host.rt.state.secretRequests.b.push({ id: `k${at}`, sessionId: 'gb', roomId: 'r1', name: `KEY_${at}`, purpose: 'p', kind: 'fill', status: 'pending', askedAt: now + 2 + at })
+    host.rt.state.roomCards.r1.push({ id: `k${at}`, kind: 'secret', botId: 'b', roomId: 'r1', askedAt: now + 2 + at, name: `KEY_${at}`, purpose: 'p', requestKind: 'fill' })
+  }
+  await host.tool('request_secret', { name: 'DEMO_TOKEN', purpose: 'build' }, 'gb', { callId: 's1', concludeTurn() {} })
+  assert.equal(requestsOf(host).some(request => request.id === 'gone'), false)
+  assert.equal(cardsOf(host).some(card => card.id === 'gone'), false)
+  assert.equal(cardsOf(host).length, 20)
+})
+
+test('a note for a member that already left is only warned about', async (t) => {
+  const host = await start(t)
+  const warnings = []
+  host.rt.warn = (...args) => warnings.push(args)
+  await host.tool('request_secret', { name: 'DEMO_TOKEN', purpose: 'build' }, 'gb', { callId: 's1', concludeTurn() {} })
+  const requestId = requestsOf(host)[0].id
+  // The member's hidden group Session is gone, but its card still waits: the answer must
+  // still save the key, and losing the note must not fail it.
+  delete host.rt.state.rooms.r1.sessions.b
+  const saved = await host.call('secret-set', { requestId, value: VALUE })
+  assert.equal(saved.ok, true)
+  assert.equal(host.rt.canUseSecret('DEMO_TOKEN', 'b'), true)
+  assert.equal(requestsOf(host)[0].status, 'saved')
+  assert.equal(cardsOf(host).length, 0)
+  assert.equal(warnings.length, 1)
+  assert.match(warnings[0][0], /secret note to %s in %s failed/)
+  assert.equal(warnings[0][1], 'b')
+  assert.equal(host.delivered.filter(entry => entry.sessionId === 'gb').length, 0)
+})
+
 test('the card feed projects a group key card for the group and never the value', async (t) => {
   const host = await start(t)
   await host.tool('request_secret', { name: 'DEMO_TOKEN', purpose: 'build' }, 'gb', { callId: 's1', concludeTurn() {} })
@@ -240,6 +312,31 @@ test('the card feed projects a group key card for the group and never the value'
   assert.equal(card.botId, 'b')
   assert.deepEqual(card.secret, { name: 'DEMO_TOKEN', description: 'build', save: true })
   assert.equal(JSON.stringify(card).includes(VALUE), false)
+})
+
+test('a group key card is listed once in the roster the phone reads', async (t) => {
+  const host = await start(t)
+  await host.tool('request_secret', { name: 'DEMO_TOKEN', purpose: 'build' }, 'gb', { callId: 's1', concludeTurn() {} })
+  const snap = host.rt.teamFeed.snapshot()
+  // The request is the authoritative source; the group dock's mirror card is the same
+  // card and must not be counted a second time.
+  const waiting = snap.pending.filter(entry => entry.kind === 'secret')
+  assert.equal(waiting.length, 1)
+  assert.equal(waiting[0].botId, 'b')
+  assert.equal(waiting[0].sessionId, 'gb')
+  assert.equal(waiting[0].roomId, undefined)
+  assert.equal(snap.bots.find(bot => bot.id === 'b').pending.filter(entry => entry.kind === 'secret').length, 1)
+  // The group's own view still shows the card it waits with.
+  assert.equal(snap.rooms.find(room => room.id === 'r1').pending.filter(card => card.kind === 'secret').length, 1)
+})
+
+test('an own-chat key card is listed once in the roster the phone reads', async (t) => {
+  const host = await start(t)
+  await host.tool('request_secret', { name: 'DEMO_TOKEN', purpose: 'build' }, 'b', { callId: 's1', concludeTurn() {} })
+  const snap = host.rt.teamFeed.snapshot()
+  const waiting = snap.pending.filter(entry => entry.kind === 'secret')
+  assert.equal(waiting.length, 1)
+  assert.equal(waiting[0].sessionId, 'b')
 })
 
 test('an own-chat key card keeps its own session and does not need a room', async (t) => {

@@ -158,6 +158,45 @@ test('skipping a card sends card.cleared, not card.answered', async (t) => {
   assert.deepEqual(frames.flatMap(frame => frame.ops), [{ op: 'card.cleared', id: 'g1' }])
 })
 
+test('a card whose answer failed is not reported answered later', async (t) => {
+  const host = await start(t)
+  host.rt.state.questions.b = question()
+  host.rt.cardFeed.touch()
+  host.rt.cardFeed.flush()
+  const frames = []
+  host.rt.cardFeed.subscribe(frame => frames.push(frame))
+  // The answer starts, the card is called answered, then the write fails and the card
+  // comes back: it must no longer be marked as answered.
+  host.rt.cardFeed.answered('q1')
+  host.rt.cardFeed.unanswered('q1')
+  host.rt.cardFeed.flush()
+  assert.deepEqual(frames, [])
+  // When it does leave the queue afterwards, it leaves as cleared, not answered.
+  delete host.rt.state.questions.b
+  host.rt.cardFeed.touch()
+  host.rt.cardFeed.flush()
+  assert.deepEqual(frames.flatMap(frame => frame.ops), [{ op: 'card.cleared', id: 'q1' }])
+})
+
+test('a failed save leaves the card shown, not answered', async (t) => {
+  const host = await start(t)
+  host.rt.state.secretRequests.b = [{ id: 's1', sessionId: 'b', name: 'GITHUB_TOKEN', purpose: '发版用', kind: 'fill', status: 'pending', askedAt: 30 }]
+  host.rt.cardFeed.touch()
+  host.rt.cardFeed.flush()
+  const frames = []
+  host.rt.cardFeed.subscribe(frame => frames.push(frame))
+  const realSave = host.rt.save
+  host.rt.save = async () => { throw new Error('disk full') }
+  const failed = await host.call('secret-set', { requestId: 's1', value: 'test-value-9f3a2b' })
+  host.rt.save = realSave
+  assert.equal(failed.ok, false)
+  // Whatever the frames raced to say, the card is back on screen and the last word about
+  // it is not "answered".
+  assert.equal(host.rt.cardFeed.snapshot().cards.some(card => card.id === 's1'), true)
+  const ops = frames.flatMap(frame => frame.ops).filter(op => op.id === 's1')
+  assert.notEqual(ops.at(-1)?.op, 'card.answered')
+})
+
 test('a secret card never carries the value', async (t) => {
   const host = await start(t)
   host.rt.state.secretRequests.b = [{ id: 's1', sessionId: 'b', name: 'GITHUB_TOKEN', purpose: '发版用', kind: 'fill', status: 'pending', askedAt: 30 }]

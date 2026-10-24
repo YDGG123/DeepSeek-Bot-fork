@@ -95,6 +95,10 @@ export function install(rt) {
       const room = rt.roomOf(roomId)
       for (const card of list) {
         if (rt.botOf(card.botId) === undefined) continue
+        // A key card in a group is a mirror of `state.secretRequests`, which above is
+        // already the authoritative source for the Bot dimension; counting the dock's
+        // copy here too would list the same card twice. The room entity still carries it.
+        if (card.kind === 'secret') continue
         addPending(card.botId, { kind: card.kind, roomId, ...(room?.sessions?.[card.botId] ? { sessionId: room.sessions[card.botId] } : {}), at: card.askedAt })
       }
     }
