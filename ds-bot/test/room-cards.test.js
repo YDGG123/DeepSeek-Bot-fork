@@ -220,7 +220,7 @@ test('a plain group message leaves the waiting card alone', async (t) => {
   assert.deepEqual(questions(host).map(card => card.id), [cardId])
 })
 
-test('two cards from one member both stay answerable, and the queue keeps its order', async (t) => {
+test("two members' cards both stay answerable, and the queue keeps its order", async (t) => {
   const host = await start(t)
   await host.tool('ask_user', { question: '第一个问题？', options: [{ label: 'A' }, { label: 'B' }] }, 'gb', { callId: 'q1', concludeTurn() {} })
   await host.tool('ask_user', { question: '第二个问题？', options: [{ label: 'C' }, { label: 'D' }] }, 'gc', { callId: 'q2', concludeTurn() {} })

@@ -226,7 +226,7 @@ host 侧改动点：
 - 作答写 `kind:'answer'` 的 User 行（preview 不受影响）；活轮内同时进 `round.replies`。
 - 跳过（dock 关闭按钮）给提问者投 followup，不是静默清槽；普通群消息不吞卡。
 - 去重仅同 payload；同成员不同问题两张都留、都可答。
-- **队列粒度**：问题卡与 view 卡各有一条 FIFO 队列（两个 dock），不是跨 kind 单队列；每条队列内可任答任意一张。
+- **队列粒度**：`state.roomCards[roomId]` 每个群只有**一条 FIFO**（`askedAt` 升序）；问题卡与 view 卡进入的是同一条队列，桌面上的两个 dock 只是**按 kind 过滤**显示同一条队列的队首，不是两条独立队列。任何一张都能直接作答。
 
 ### 自验（Node v22.20.0）
 
