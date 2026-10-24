@@ -111,6 +111,9 @@ cd "$P"
 
 - 必须 `--no-frozen-lockfile`：`file:` 依赖会改 lockfile。
 - 安装会更新 `node_modules`；正在运行的宿主已加载旧模块，**运行中不受影响，重启后才生效**。
+- **安装期间不要刷新桌面窗口 / 不要在浏览器里重载页面**：`client.js` 可能正在被替换，刷到一半会短暂 404。装完再重启。
+- **安装后先看清 pnpm 输出**：正常只会动 `ds-bot`（和 `file:` 的网关）。若它要新增/删除其它包（尤其带版本升级），**停止、回滚 package.json 那一行再重试**，不要让它顺手改别的依赖。
+- 网关两文件建议**先 copy（第 4 节）再 install**：lock 里目录依赖只记了 `directory`、没有内容哈希，pnpm 每次 install 可能重新打包也可能跳过，先 copy 是零成本保险；install 后再按第 4 节 `diff` 复核一次。
 - 安装后立即核对：
   ```bash
   P="$HOME/.dsh/profiles/desktop"
@@ -141,30 +144,46 @@ open -a "DeepSeek Harness"
 
 ## 7. 重启后确认服务真的起来了
 
-**权威检查：`/info` 的能力位**（免鉴权，已在代码里核实：`/info` 在 `access()` 之前返回）。
+**权威检查：`/info` 的能力位**（免鉴权：mobile-v1 的路由分支里 `/info` 在 `access()` 鉴权之前返回；LAN 监听器的 HTTP 请求直接交给 mobile-v1 路由，没有额外关口）。
 
 ```bash
 # LAN 监听（配置 lanPort: 3081，绑 0.0.0.0，loopback 可访问）
 curl -s http://127.0.0.1:3081/mobile/v1/info
 ```
 
-期望（修剪后）：
+**判读要点（重要，别被字面骗了）：**
+
+| 字段 | 真实含义 |
+|---|---|
+| `team` / `cards` | **恒为 true**（网关装配 mobile-v1 时就创建了这两个对象），**不代表 ds-bot 服务在** |
+| `teamDegraded` / `cardsDegraded` | 真正信号：`true` = 读不到 ds-bot 的 `dsBotTeam` / `dsBotCards`，网关在降级 |
+
+而且 **`*Degraded` 要等手机连过一次才可信**：服务的绑定发生在首个订阅者/首次快照时（网关在客户端连上后订阅团队流与卡片流）。所以顺序是：
+
+```bash
+# 1) 刚重启、手机还没连：这里看到 teamDegraded:true 属正常，不作数
+curl -s http://127.0.0.1:3081/mobile/v1/info
+
+# 2) 让手机连一次（打开 App / 团队页），触发绑定
+
+# 3) 再看一次，这时才是终态
+curl -s http://127.0.0.1:3081/mobile/v1/info
+```
+
+期望终态：
 
 ```json
 {
   "protocolVersion": 1,
-  "capabilities": {
-    "team": true,
-    "teamDegraded": false,
-    "cards": true,
-    "cardsDegraded": false
-  }
+  "capabilities": { "team": true, "teamDegraded": false, "cards": true, "cardsDegraded": false }
 }
 ```
 
-判读：
-- `team:false` / `cards:false` → ds-bot 的 `ctx.provide` 没起来（装错目录、宿主没重启、插件加载失败）。
-- `teamDegraded:true` / `cardsDegraded:true` → 网关在降级（名册走旧投影、卡片走占位卡），说明服务没读到或读失败。
+排查顺序（Degraded 仍为 true）：
+1. fork 是否真装上：`grep -c dsBotCards node_modules/ds-bot/index.js` 应为 >0；
+2. 宿主是否真重启过（`provide` 只在 apply 时注册）；
+3. 网关插件是否加载成功（`/info` 本身 404/拒连 = 网关模块图断了，先查第 4 节的两个文件）；
+4. 以上都对仍降级：回滚（第 8 节）再查。
 
 备选端口：若 3081 不通，用宿主自己的 WebUI 端口（可能每次不同）：
 
@@ -180,26 +199,30 @@ lsof -nP -iTCP -sTCP:LISTEN | grep -i "DeepSeek Harness\|node" | head
 
 ---
 
-## 8. 回滚（一条命令块）
+## 8. 回滚（离线优先）
+
+**离线也能回滚**：不需要 `pnpm install`。`nodeLinker: hoisted` 下 `node_modules/ds-bot` 是自包含的真实目录，恢复它 + 两份清单即可启动；pnpm 只是让元数据一致，可以以后联网再跑。
 
 ```bash
 set -e
 P="$HOME/.dsh/profiles/desktop"
 STAMP=20261024
 
+# 主路径（离线可完成，然后由用户手动重启一次即可）
 rm -rf "$P/node_modules/ds-bot"
 cp -R  "$P/.ds-bot.pre-fork-$STAMP" "$P/node_modules/ds-bot"
 cp     "$P/package.json.pre-fork"     "$P/package.json"
 cp     "$P/pnpm-lock.yaml.pre-fork"   "$P/pnpm-lock.yaml"
 
+# 可选（联网时再做，把 pnpm 元数据也拉回一致）
 NODE="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/bin/node"
 PNPM="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/primary-runtime/dependencies/pnpm/bin/pnpm.cjs"
 cd "$P" && "$NODE" "$PNPM" install --no-frozen-lockfile
 ```
 
 - 回滚后同样需要**用户手动重启**一次。
-- 网络不可用、pnpm 装不动时：停在第 2 步（目录+两份文件已恢复）。hoisted 布局下 `node_modules/ds-bot` 自包含，通常可直接启动。
-- 回滚生效判据：`grep -c "dsBotCards" node_modules/ds-bot/index.js` 为 `0`，且 `/info` 里 `team:false, cards:false`。
+- 网关那两个 copy 过去的文件**不用回滚**：registry 版 ds-bot 不发布服务，网关 `/info` 自然显示 `*Degraded:true`；文件留着无副作用，等下次装再复用。
+- 回滚生效判据：`grep -c "dsBotCards" node_modules/ds-bot/index.js` 为 `0`，且手机连过一次后 `/info` 的 `teamDegraded` 仍为 `true`（registry 版没有 `dsBotTeam`）。
 
 ---
 
@@ -209,7 +232,8 @@ cd "$P" && "$NODE" "$PNPM" install --no-frozen-lockfile
 |---|---|---|
 | 宿主起不来 / 插件加载报错 | `ERR_MODULE_NOT_FOUND … team-feed.mjs` | 第 4 节没做或 install 把它冲掉了，重新 copy |
 | `/info` 404 | 端口不对或 mobile-v1 未启用 | 用第 7 节 `lsof` 找端口；确认 `cordis.patch.yml` 里 `mobileV1Enabled: true` |
-| `/info` 200 但 `team:false` | ds-bot 是 registry 版或没重启 | 核对 `grep dsBotCards node_modules/ds-bot/index.js`；确认最后一步重启了 |
-| `teamDegraded:true` | 网关读到了服务但快照失败 | 先回滚（第 8 节），重启后再查 ds-bot 诊断日志 |
-| 卡片不出现但 `cards:true` | 手机端未订阅卡片流 / 没有待答卡 | 桌面先发一张 ask_user，再刷新手机 |
+| `/info` 200，`team/cards` 为 true 但没数据 | 正常：`team/cards` 恒为 true，只看 `*Degraded` | 手机连一次后再看 `*Degraded`（第 7 节） |
+| 手机连过后 `teamDegraded:true` | 服务没读到：没装 fork、没重启、或网关模块图断 | 按第 7 节 4 步排查；必要时第 8 节回滚 |
+| `cardsDegraded:true` 而 team 正常 | `dsBotCards` 没发布（任务 3 未装/未重启） | 核对 `grep dsBotCards node_modules/ds-bot/index.js` |
+| 卡片不出现但 `cardsDegraded:false` | 没有待答卡，或手机端未订阅卡片流 | 桌面先发一张 ask_user，再刷新手机 |
 | 想立刻回到装之前 | — | 第 8 节回滚 + 手动重启 |
