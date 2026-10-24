@@ -306,6 +306,8 @@ export function install(rt) {
     if (!writable()) return writing
     state.revision += 1
     state.exchanges = state.exchanges.slice(-MAX_EXCHANGES)
+    // A change the team page should see: send it to the mobile gateway at once.
+    rt.teamFeed?.touch?.()
     const snapshot = JSON.stringify(state)
     const run = writing.then(async () => {
       const temp = `${statePath}.${process.pid}.tmp`

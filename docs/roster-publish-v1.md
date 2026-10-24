@@ -1,6 +1,6 @@
 # 团队名册发布接口 v1（ds-bot → 移动网关）
 
-> 需求 8（甲方案前提）。状态：**设计稿，等网关侧对齐后落地**。
+> 需求 8（甲方案前提）。状态：**已实现（2026-10-24），契约冻结**。
 > 日期：2026-10-24 · 分支 `feat/group-chat-cards`
 > 依据：`docs/group-chat-cards-recon.md`、`dsh-mobile/Docs/bot-team-rework-plan.md` 第四节（快照+增量+节流+静态缓存）
 
@@ -247,3 +247,34 @@ interface DsBotTeam {
 4. **颜色**：`color` 是调色板 key（`COLORS`/`EXTRA_COLORS`，见 `src/host/constants.js`），**不是 hex**。手机 `TeamView.swift:364` 现在按 hex 解析，必须由网关/手机侧配 key→色值表，否则颜色直接坏——这是硬依赖，不能省。
 5. **agents 行**：本轮不进 v1（手机团队页先不显示），字段名预留。
 6. **重启代价**：`instanceId` 变化即要求全量重取（含头像 data URL），属于设计接受的行为，网关侧不要做跨重启的缓存命中假设。
+
+---
+
+## 10. 落地记录（2026-10-24）
+
+### 接入与文件
+
+| 项 | 实现 |
+|---|---|
+| 发布 | `index.js`：`export const provide = ['dsBotTeam']`；`src/host/team-feed.js` 里 `ctx.provide('dsBotTeam', rt.teamFeed)` |
+| 服务 | `rt.teamFeed`：`{ v, instanceId, seq(), snapshot(), subscribe(fn), flush(), touch(), poke() }` |
+| 触发 | `store.save()` 调 `rt.teamFeed.touch()`（结构/状态变更，下一 tick 冲刷）；`session/event`（turn/start、turn/end、user/message、assistant/message、tool/call、tool/result）与 `agent/status` 调 `poke()`（400 ms 合并） |
+| 兜底 | 3 s reconcile（仅有订阅者时跑）：全量重算并补发差异 |
+| 安装顺序 | team-feed 紧跟 room-cards 注册，**早于** feed/channel，避免它的 `session/event`、`agent/status` 监听器抢占「最后一个监听器」位置（`test/feed.test.js` 依赖这一点） |
+
+契约要点逐条对应：
+
+- `snapshot.seq = head`，**不增加 seq**；`delta.base = seq - 1`。有未发送变更时 `snapshot()` 不刷新内部缓存，避免吞掉其它订阅者的增量。
+- 一帧内每个实体最多一个 op：新实体 `add`；静态字段变化 `update`（含同时变化的易变字段）；只有易变变化 `patch`（绝对值）；消失 `remove`；主 Bot 变化 `main.set`。
+- 单帧 `ops > 200` 时改发 `snapshot`。
+- `lastActivityAt` 由进程内观察点打点，best-effort；排序权威仍是网关的会话 `updatedAt`。
+- `approvals` 带 `reason`（截 200 字），**不带 `detail`**；`work` 带 `note`；`waiting` 三键 `{bots, rooms, for}`。
+- 顶层 `pending` 只在快照里给（按 `at` 升序）；增量靠实体级 `pending` 重建，避免双通道。
+- 可测性：`config.teamFeedThrottleMs`（默认 400）、`config.teamFeedReconcileMs`（默认 3000），仅测试用。
+
+### 自验（Node v22.20.0）
+
+- `npm test`：855 用例 / 853 通过 / 2 跳过 / 0 失败（新增 `test/team-feed.test.js` 10 个用例）
+- `npm run lint`：0 错误、11 警告（与基线一致）
+- `node scripts/build-client.mjs --check`：exit 0
+- 既有用例改动：`test/install.test.js`（新增 3 条注册顺序）、`test/memory.test.js`（`on agent/status` 计数 3→4，team feed 也监听）——均为预期变更
