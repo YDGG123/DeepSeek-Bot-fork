@@ -14,7 +14,7 @@ import { randomUUID } from 'node:crypto'
 // 头像/颜色的**唯一事实源**：与电脑端同一个 `lookOf`（纯函数，无 DOM 依赖）。
 // roster 下发前就把缺省的 shape / color 解析好，手机端只渲染、不推导 —— 否则
 // 「同一个 Bot 在电脑端和手机端形状不同」会一直复现（QA 实测）。
-import { lookOf } from '../client/characters.js'
+import { lookOf, shapeOf } from '../client/characters.js'
 
 const RECONCILE_MS = 3_000
 const MAX_OPS = 200
@@ -23,6 +23,19 @@ const REASON_MAX = 200
 const WATCHED = new Set(['turn/start', 'turn/end', 'user/message', 'assistant/message', 'tool/call', 'tool/result'])
 
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
+// 手机要能直接按 Path 画：只带可移植的几何（path/layers/eyes）与已解析的颜色。
+const glyphOf = (look) => {
+  const def = shapeOf(look.shape)
+  if (def === undefined) return undefined
+  return {
+    shape: look.shape,
+    color: look.color,
+    size: def.size,
+    path: def.path ?? null,
+    layers: def.layers ?? '',
+    eyes: def.eyes ?? [],
+  }
+}
 const head = (text, max) => (text.length <= max ? text : text.slice(0, max))
 const changed = (before, after) => [...new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})])]
   .filter(key => !same(before?.[key], after?.[key]))
@@ -112,6 +125,9 @@ export function install(rt) {
       const doing = work[bot.id]
       // 存值优先，缺省按 bot id 稳定推导（契约 v2 起 shape/color 必定有值）。
       const look = lookOf(bot)
+      // 矢量字形（方案 C）：直接取电脑端同一张 SHAPES 表，不另存一份数据。
+      // 有自定义位图时不发 glyph——三层兜底里应当让用户自己的照片被看到。
+      const glyph = look.image ? undefined : glyphOf(look)
       const approvalLines = approvals.filter(entry => entry.botId === bot.id).map(entry => ({
         sessionId: entry.sessionId,
         ...(entry.roomId ? { roomId: entry.roomId } : {}),
@@ -129,6 +145,7 @@ export function install(rt) {
           color: look.color,
           // 图片是可选的；shape 永远有值（读者不得再自行推导）。
           avatar: look.image ? { shape: look.shape, image: look.image } : { shape: look.shape },
+          ...(glyph === undefined ? {} : { glyph }),
           ...(bot.model ? { model: bot.model } : {}),
           ...(bot.effort ? { effort: bot.effort } : {}),
           ...(bot.workDir ? { workDir: bot.workDir } : {}),

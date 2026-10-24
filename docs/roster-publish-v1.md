@@ -123,7 +123,8 @@ interface DsBotTeam {
 | `name` | string | |
 | `role` | string | 角色标签 |
 | `color` | string | **已解析**：ds-bot 调色板 key 或 hex；host 保证必有值（存值优先，缺省按 bot id 推导），手机端只映射不推导 |
-| `avatar` | `{ shape, image? }` | **`shape` 必有值且已解析**（角色 id，缺省按 bot id 推导）；`image` 是可选的 data URL，**可能较大，只在快照里出现一次** |
+| `avatar` | `{ shape, image? }` | **`shape` 必有值且已解析**（角色 id，缺省按 bot id 推导）；`image` 是可选的 data URL（PNG/JPEG 位图），单张解码后 **≤32KB**，只在快照里出现一次 |
+| `glyph` | `{ shape, color, size, path, layers, eyes }`? | **可选矢量字形**（方案 C）：手机直接按 Path 绘制，**与电脑端同一张 `SHAPES` 表**（`src/client/characters.js`），不是第二份数据。`layers` 是装饰/明暗层的 SVG 标记串，`eyes` 是 `[cx,cy,w,h,tilt]` 列表。**有自定义 `avatar.image` 时不发**（让位给用户照片） |
 | `model` | string? | `provider/model` |
 | `effort` | string? | 思考等级 |
 | `workDir` | string? | 工作目录（详情页） |
@@ -175,16 +176,18 @@ interface DsBotTeam {
 
 | 类别 | 内容 | 何时发 |
 |---|---|---|
-| 静态 | name/role/color/avatar/model/effort/workDir/instructions/createdAt/pinned/main/sessionId/parts；room 的 members/admin/mode/notice | 只在 `snapshot`、`add`、`update`（改名等结构变更） |
+| 静态 | name/role/color/avatar/glyph/model/effort/workDir/instructions/createdAt/pinned/main/sessionId/parts；room 的 members/admin/mode/notice | 只在 `snapshot`、`add`、`update`（改名等结构变更） |
 | 结构变更 | Bot 增删、Room 增删、改名、换成员/管理员、置顶、换主 Bot | **立即发**，不节流，并先冲刷待发 patch（保证顺序） |
 | 易变 | activity/work/approvals/pending/waiting/lastActivityAt；room 的 work/preview/lastActivityAt | 只进 `patch`，400 ms 合并 |
 | 兜底 | 高频派生字段（activity 由 approvalsView/waitingView 派生，漏打点就会陈旧） | **3 s 低频 reconcile**：全量重算易变字段指纹，发现差异补发 patch；**仅有订阅者时跑** |
 | 超大帧 | 单帧 `ops > 200` | 改发 `snapshot`（防御） |
 
-体积预估：20 Bot + 10 群快照约 2–6 KB（头像占大头，仅一次）；单条 patch 100–300 B；10 Bot 每秒各变 2 次约 4 KB/s，符合方案第四节。
+体积预估：20 Bot + 10 群快照约 2–6 KB（头像占大头，仅一次）；**glyph 实测**：20 个角色合计 24.4 KB（平均 1.2 KB/个，最大 1.9 KB），20 Bot 名单再加约 24–38 KB；单条 patch 100–300 B；10 Bot 每秒各变 2 次约 4 KB/s，符合方案第四节。
 
 > **身份字段口径**：`mainBotId ≡ mainBotIds[0] ?? null`，两处必须同源（与 `channel.js:view()` 一致），不单独维护。
 > **头像**：`avatar` 是 `{ shape, image? }` 对象，`image` 是 data URL，只在快照里传；host 重启后 `instanceId` 变化、旧 seq 失效、必然重取快照，等于重新传一次——这个代价可接受，不做增量头像。
+> **三层兜底（手机渲染顺序）**：`glyph`（矢量，优先）→ `avatar.image`（用户位图）→ `shape + color` 符号。发布端保证：有自定义位图时不发 `glyph`，所以照片不会被矢量盖掉；两者都没有时 `shape`/`color` 仍然必有值，符号永远画得出来。
+> **glyph 与电脑端同源**：host 与 `client.js` 用**同一个** `SHAPES` 表（`shapeOf()`，`src/client/characters.js`），发布时只做取值与裁剪（`shape/color/size/path/layers/eyes`），不复制、不改写几何——改角色只需改那张表，两端同时生效。
 > **头像与颜色不在读者侧推导（v2 起）**：host 用电脑端同一个 `lookOf()`（`src/client/characters.js`）在发布前就解析好 `avatar.shape` 与 `color`，缺省值由 bot id 稳定推导（FNV-1a + murmur3/mulberry32，同一 id 恒得同一形状/颜色）。读者**只渲染、不再推导**；此前手机端按名字兜底导致「同一 Bot 两端形状不同」，此条即为修法。
 
 ---

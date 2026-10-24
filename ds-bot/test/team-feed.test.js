@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { createRuntime } from '../index.js'
-import { defaultColor, defaultShape } from '../src/client/characters.js'
+import { defaultColor, defaultShape, lookOf, SHAPES } from '../src/client/characters.js'
 import { fakeContext } from './fake-ctx.js'
 
 // Chief (a) and Writer (b) are in group 'r1'; Writer speaks there from 'gb'. Tester (c)
@@ -136,6 +136,55 @@ test('roster resolves avatar shape and color before publishing (single source of
     assert.equal(typeof entry.color, 'string')
     assert.ok(entry.color.length > 0)
   }
+})
+
+test('glyph 与电脑端同一张 SHAPES 表，不是第二份数据', async (t) => {
+  const host = await start(t, {
+    seedPatch: state => {
+      state.bots.a.color = 'magenta'
+      state.bots.a.avatar = { shape: 'star' }
+      state.bots.b.avatar = { shape: 'acorn', image: 'data:image/png;base64,AA' }
+    },
+  })
+  const snap = host.rt.teamFeed.snapshot()
+  for (const entry of snap.bots) {
+    const look = lookOf(host.rt.state.bots[entry.id])
+    // 有自定义位图的不发 glyph（让位给照片），其余必须与桌面同源。
+    if (look.image) { assert.equal(entry.glyph, undefined); continue }
+    const def = SHAPES[look.shape]
+    assert.equal(entry.glyph.shape, look.shape)
+    assert.equal(entry.glyph.color, look.color)
+    assert.equal(entry.glyph.size, def.size)
+    // 逐字段同源：手机画的就是桌面这张表里的几何。
+    assert.equal(entry.glyph.path, def.path)
+    assert.equal(entry.glyph.layers, def.layers)
+    assert.deepEqual(entry.glyph.eyes, def.eyes)
+  }
+  // 三层兜底的第 2 层：有自定义位图时让位，手机该看到用户自己的照片。
+  assert.equal(bot(snap, 'b').glyph, undefined)
+  assert.equal(bot(snap, 'b').avatar.image, 'data:image/png;base64,AA')
+  assert.equal(bot(snap, 'a').glyph.color, 'magenta')
+  // avatar 仍是对象（不是字符串），glyph 是可选字段。
+  assert.equal(typeof bot(snap, 'a').avatar, 'object')
+  assert.equal(typeof bot(snap, 'a').avatar.shape, 'string')
+})
+
+test('二十个 Bot 的 glyph 加起来仍然很小', async (t) => {
+  const host = await start(t, {
+    seedPatch: (state) => {
+      state.bots = {}
+      const shapes = Object.keys(SHAPES)
+      for (let index = 0; index < 20; index += 1) {
+        const id = `bot-${index}`
+        state.bots[id] = { id, name: `Bot ${index}`, role: 'R', instructions: '', sessionId: id, createdAt: index + 1, avatar: { shape: shapes[index % shapes.length] } }
+      }
+    },
+  })
+  const snap = host.rt.teamFeed.snapshot()
+  assert.equal(snap.bots.length, 20)
+  const bytes = Buffer.byteLength(JSON.stringify(snap.bots.map(entry => entry.glyph)))
+  // 红线：整份名单的字形远低于网关 1MB 分帧阈值；这里钉在 64KB。
+  assert.ok(bytes < 64 * 1024, `20 glyphs = ${bytes} B`)
 })
 
 test('snapshot never consumes seq, and a delta bases on the frame the reader applied', async (t) => {

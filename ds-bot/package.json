@@ -37,7 +37,9 @@
     "web-search.js",
     "cordis.patch.yml",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "src/client/characters.js",
+    "src/client/inks.js"
   ],
   "scripts": {
     "build": "node scripts/build-client.mjs",
