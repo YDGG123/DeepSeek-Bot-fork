@@ -17,22 +17,48 @@ const MAX_OPS = 200
 const VIEW_TEXT_MAX = 2_000
 
 const field = value => (typeof value === 'string' ? value.trim() : typeof value === 'number' ? String(value) : '')
+// 上游 v0.2.1：视图字段可以是公式 { "=": "expression" }。手机投影不解释公式，
+// 但至少把表达式带出去，不让这一行凭空消失。
+const shown = value => (value !== null && typeof value === 'object' && typeof value['='] === 'string' ? `=\`${value['=']}\`` : field(value))
 
 function flattenView(node, depth = 0) {
   if (!node || typeof node !== 'object' || Array.isArray(node) || depth > 12) return []
   const type = node.type ?? node.component
-  if (type === 'stack') return (Array.isArray(node.children) ? node.children : []).flatMap(child => flattenView(child, depth + 1))
-  if (type === 'text') return [field(node.text)]
-  if (type === 'metric') return [[field(node.label), field(node.value)].filter(Boolean).join(': ')]
+  // 上游 v0.2.1 的新组件（row 布局、chart/html/callout/sources 展示、slider 等输入）：
+  // 手机端投影是纯文本，压不出来就丢信息，所以每种都给一行可读摘要。
+  if (type === 'stack' || type === 'row') return (Array.isArray(node.children) ? node.children : []).flatMap(child => flattenView(child, depth + 1))
+  if (type === 'text') return [shown(node.text)]
+  if (type === 'metric') return [[shown(node.label), shown(node.value)].filter(Boolean).join(': ')]
   if (type === 'table') {
     const columns = Array.isArray(node.columns) ? node.columns : []
     const head = columns.map(column => field(column?.label) || field(column?.key)).filter(Boolean).join(' | ')
     const rows = (Array.isArray(node.rows) ? node.rows : []).map((row) => {
-      if (!row || typeof row !== 'object') return ''
-      return columns.map(column => field(row[column?.key])).join(' | ')
+      if (!Array.isArray(row)) {
+        if (!row || typeof row !== 'object') return ''
+        return columns.map(column => field(row[column?.key])).join(' | ')
+      }
+      return row.map(cell => shown(cell)).join(' | ')
     })
     return [head, ...rows].filter(Boolean)
   }
+  if (type === 'chart') {
+    const series = (Array.isArray(node.series) ? node.series : []).map((s) => {
+      const name = field(s?.name)
+      const values = (Array.isArray(s?.values) ? s.values : []).map(v => shown(v)).filter(Boolean).join(', ')
+      return [name || 'series', values].filter(Boolean).join(': ')
+    })
+    const cats = (Array.isArray(node.categories) ? node.categories : []).map(item => shown(item)).filter(Boolean)
+    return [
+      [field(node.caption) || 'Chart', field(node.kind)].filter(Boolean).join(' (') + (field(node.caption) || field(node.kind) ? ')' : ''),
+      ...(cats.length > 0 ? [`Categories: ${cats.join(', ')}`] : []),
+      ...series,
+    ].filter(Boolean)
+  }
+  if (type === 'callout') return [shown(node.text)]
+  if (type === 'sources') {
+    return (Array.isArray(node.items) ? node.items : []).map(item => [field(item?.label), field(item?.url)].filter(Boolean).join(' ')).filter(Boolean)
+  }
+  if (type === 'html') return [field(node.summary) || '[embedded html]']
   if (type === 'options') {
     const labels = (Array.isArray(node.options) ? node.options : []).map(option => field(option?.label)).filter(Boolean)
     return [labels.length === 0 ? '' : `Options: ${labels.join(' / ')}`]
@@ -46,10 +72,19 @@ function flattenView(node, depth = 0) {
     const labels = (Array.isArray(node.fields) ? node.fields : []).map(item => field(item?.label) || field(item?.id)).filter(Boolean)
     return [labels.length === 0 ? 'Form' : `Form: ${labels.join(', ')}`]
   }
+  if (type === 'submit') return [`[Submit: ${field(node.label) || 'Send'}]`]
   if (type === 'progress') {
     const percent = Number.isFinite(node.percent) ? `${node.percent}%` : ''
     return [[field(node.label), percent].filter(Boolean).join(' ')]
   }
+  if (type === 'slider' || type === 'number') {
+    return [[field(node.label), `${field(node.value ?? node.min ?? 0)}${node.unit ? ` ${field(node.unit)}` : ''}`].filter(Boolean).join(': ')]
+  }
+  if (type === 'choice') {
+    const labels = (Array.isArray(node.options) ? node.options : []).map(option => field(option?.label)).filter(Boolean)
+    return [[field(node.label), labels.length > 0 ? `(${labels.join(' / ')})` : ''].filter(Boolean).join(': ')]
+  }
+  if (type === 'toggle') return [[field(node.label), node.value === true ? 'on' : 'off'].filter(Boolean).join(': ')]
   return []
 }
 
