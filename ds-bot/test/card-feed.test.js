@@ -142,6 +142,7 @@ test('answering a question card sends card.answered and drops it from the snapsh
   host.rt.cardFeed.subscribe(frame => frames.push(frame))
   const answered = await host.call('answer-question', { sessionId: 'b', questionId: 'q1', answer: { selected: ['B'] } })
   assert.equal(answered.ok, true)
+  host.rt.cardFeed.flush()
   assert.deepEqual(frames.flatMap(frame => frame.ops), [{ op: 'card.answered', id: 'q1' }])
   assert.equal(host.rt.cardFeed.snapshot().cards.length, 0)
 })
@@ -155,6 +156,7 @@ test('skipping a card sends card.cleared, not card.answered', async (t) => {
   host.rt.cardFeed.subscribe(frame => frames.push(frame))
   const skipped = await host.call('dismiss-question', { sessionId: 'r1', cardId: 'g1' })
   assert.equal(skipped.ok, true)
+  host.rt.cardFeed.flush()
   assert.deepEqual(frames.flatMap(frame => frame.ops), [{ op: 'card.cleared', id: 'g1' }])
 })
 
@@ -248,6 +250,7 @@ test('a deleted group clears its cards; an unsubscribed reader gets nothing', as
   const off = host.rt.cardFeed.subscribe(frame => frames.push(frame))
   const removed = await host.call('delete-room', { id: 'r1' })
   assert.equal(removed.ok, true)
+  host.rt.cardFeed.flush()
   assert.deepEqual(frames.flatMap(frame => frame.ops), [{ op: 'card.cleared', id: 'g1' }])
   off()
   host.rt.state.questions.b = question()

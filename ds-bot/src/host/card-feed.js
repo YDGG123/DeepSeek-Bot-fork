@@ -141,6 +141,8 @@ export function install(rt) {
         const common = meta(card.id, card.askedAt, card.botId, roomId, roomId)
         if (card.kind === 'question') cards.set(card.id, questionCard(common, card))
         else if (card.kind === 'view') cards.set(card.id, viewCard(common, card))
+        // A key card's mirror is deliberately not read here: secrets come from
+        // state.secretRequests above (one card, one source), whatever the loop order.
       }
     }
     return new Map([...cards].sort(([left], [right]) => (cards.get(left).at - cards.get(right).at) || left.localeCompare(right)))

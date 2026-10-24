@@ -55,7 +55,8 @@
    - 取 `room = rt.roomOf(owner.roomId)`；不在群里则退回错误提示。
    - 用户已可用该密钥 → 和 own chat 一样直接返回用法（不弹卡）。
    - 同 Bot 同名的 pending request **先置 canceled 并删其镜像卡**（沿用 own chat 的取代语义）。
-   - 写 request：`{ id, kind: secret ? 'allow' : 'fill', status:'pending', roomId, sessionId: id, name, purpose, askedAt }`；
+   - 写 request：`{ id: randomUUID(), kind: secret ? 'allow' : 'fill', status:'pending', roomId, sessionId: <提问时的隐藏群会话 id>, name, purpose, askedAt }`。
+     两个 id 不要混：`id` 是 request 自己的身份（作答、去重、镜像卡都用它）；`sessionId` 只是内部记录的提问会话，**不下发**。对外的作答目标由投影给出：群卡 `sessionId = roomId`。
      `exec.callId` 不记（群里工具格隐藏，dock 才是落点）。
    - 写镜像卡进 `state.roomCards[roomId]`；`rt.save()`。
    - `rt.waitRoomTurn?.(id)` → 槽位 `waiting-answer`（同第一批）；`exec.concludeTurn?.()`。
@@ -126,7 +127,7 @@ commit(notes)                                             // note 投回隐藏�
 | 删群 | 群下所有 pending 的 secret request → `canceled`，镜像卡随 `dropRoomCards` 一起走 |
 | 成员移出群 | 该成员在该群的 pending request → `canceled`；镜像卡删 |
 | Bot 删除 | 已有 `forgetBotSecrets(botId)` 删 `state.secretRequests[botId]`；补：删它在各群的镜像卡 |
-| `trimRequests` 逐出 | 逐出的是 settled 记录，镜像卡早已出不冲突 |
+| `trimRequests` 逐出 | 先逐 settled；全是 pending 时逐出最老的非群 pending；**群 pending 只在随卡一起逐出时**置 `canceled` 并删镜像卡（不再留悬空卡）。上限在极端情况可临时超出，不影响正确性 |
 
 ---
 
@@ -183,7 +184,8 @@ commit(notes)                                             // note 投回隐藏�
 | `src/host/room-cards.js` | 支持 `kind:'secret'` 的进入/去重（按 id 与 name+kind）/清理；镜像卡不受 question/view 的 payload 去重影响 |
 | `src/host/store.js` | 迁移时保留 `kind:'secret'` 的镜像卡（当前只允许 question/view，需放宽） |
 | `src/host/roster.js` | 删群/移人/删 Bot 时取消对应 pending request |
-| `src/host/card-feed.js` | secret 卡的 roomId/sessionId 映射 |
+| `src/host/card-feed.js` | secret 卡的 roomId/sessionId 映射（群卡 `sessionId=roomId`）；bots 维度只认 `secretRequests`，roomCards 循环不收 secret |
+| `src/host/team-feed.js` | **去重**：roomCards 镜像循环跳过 `kind:'secret'`（Bot 维度只认 `secretRequests`），room 实体仍保留镜像卡 |
 | `src/client/secret-card.js` | `RoomSecretDock` + scope 默认 bot |
 | `src/client/index.js` 或 dock 挂载处 | 群会话渲染 RoomSecretDock（与问题/view dock 并列） |
 | `client.js` | `npm run build` |
@@ -219,3 +221,17 @@ commit(notes)                                             // note 投回隐藏�
 - `npm run lint`：0 错误、11 警告（与基线一致）
 - `node scripts/build-client.mjs --check`：exit 0（客户端已重建）
 - 值不外泄断言：`state.roomCards`、`cardFeed.snapshot()`、群日志三处序列化全文搜索值串均为 false；`secrets.json` 在失败回滚后亦不含值。
+
+---
+
+## 12. QA 独立复核的 3 点（2026-10-24，随 `2bfa831` 修并记录）
+
+| # | 复核点 | 落法 |
+|---|---|---|
+| 1 | team-feed 的 `pending` 双计 | `team-feed.js` 的 roomCards 镜像循环**跳过 `kind:'secret'`**；Bot 维度只认 `state.secretRequests`；**room 实体仍保留镜像卡**（群视角不丢）。断言：群内请求密钥后顶层 `pending` 恰好 1 条、该 Bot 的 `pending` 恰好 1 条、room 实体仍 1 条镜像卡 |
+| 2 | card-feed 覆盖顺序依赖 | card-feed 的 secret **只从 `state.secretRequests` 来**，roomCards 循环显式不读 secret（已在代码注释写明，行为不依赖循环顺序） |
+| 3 | `sessionId: id` 语义 | 设计稿 §3 步骤已改写：`id` = request 身份；`sessionId` = 提问时的隐藏群会话（内部、不下发）；对外作答目标是投影里的 `sessionId = roomId` |
+
+同时修正了 §5.5 里「trim 只逐 settled」的错误说法（实际全 pending 时会逐最老 pending；群 pending 只在随卡逐出时取消）。
+
+`2bfa831` 另补四个缺口用例：成员移出 / 删 Bot 取消等待中的请求、trim 两种情形、`cardFeed.unanswered` 帧语义、stale note 丢弃。
