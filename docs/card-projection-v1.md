@@ -1,6 +1,6 @@
 # 卡片投影接口 v1（ds-bot → 移动网关 `dsBotCards`）
 
-> 需求 10 来源②。状态：**契约草案，等网关侧确认后落码**。
+> 需求 10 来源②。状态：**已实现（2026-10-24），待 QA 验证；契约按网关 fbd080d 消费者冻结**。
 > 日期：2026-10-24 · 分支 `feat/group-chat-cards`
 > 对齐对象：网关仓库 `fbd080d` 的消费者 `lib/mobile-v1/card-frames.mjs`（`CARD_SERVICE_CONTRACT` 已写死形状）。本草案**按消费者已实现的归一化规则反向定义**，保证服务一到就能用，不再出现「消费者先写、服务后到」的占位态。
 
@@ -209,3 +209,35 @@ view 卡 v1 不可答（§3.2），手机侧只展示。
 2. **答复动作名与入参**（§6）：网关定义动作名，ds-bot 只提供上面三个 `/api/bot` 下游调用。
 3. **`sessionId` 语义**按 §3 公共字段（答复目标 id）——与占位卡的 `sessionId` 一致，请确认。
 4. 密钥卡的手机输入界面是否本批要（desktop 已有；手机端要新增安全输入页）。若本批不做，secret 卡只投影、手机不提供作答入口，等第二批与群内密钥卡一起。
+
+---
+
+## 9. 落地记录（2026-10-24）
+
+### 消费者零改动
+
+按 QA 的建议定死两条缝隙：**A. view 卡 v1 纯展示投影**（可交互控件回桌面答）；**B. 标题放 `view.title` 内**。
+因此 `card-frames.mjs` 的 `normalizeCard` **一行不用改**：我们只发它保留的字段（question 的 `questions[]`、view 的 `title/text`、secret 的 `name/description/save`），控件结构不发。
+
+### 改动文件
+
+| 文件 | 改动 |
+|---|---|
+| `src/host/card-feed.js`（新增） | 收集 own chat 与群内卡 → 扁平数组；`card.shown/answered/cleared` 增量；蓝图层压平 `viewText`；`ctx.provide('dsBotCards', rt.cardFeed)` |
+| `index.js` | `provide = ['dsBotTeam', 'dsBotCards']`；注册 card-feed（紧跟 team-feed，不注册监听器，不影响既有安装顺序断言） |
+| `src/host/store.js` | `save()` 同时 `rt.cardFeed?.touch()` |
+| `src/host/channel.js` | 作答成功（群内 / own chat）后 `rt.cardFeed?.answered(id)` |
+| `src/host/secrets.js` | `secret-set`（requestId 分支）与 `secret-allow` 成功后备注 answered |
+| `test/card-feed.test.js`（新增） | 10 个用例 |
+
+### 自验（Node v22.20.0）
+
+- `npm test`：865 用例 / 863 通过 / 2 跳过 / 0 失败
+- `npm run lint`：0 错误、11 警告（与基线一致）
+- `node scripts/build-client.mjs --check`：exit 0（本批未改客户端）
+- 断言覆盖 §7 十条：快照形状与 seq、label 逐字、群卡 `sessionId=roomId` 且不泄漏隐藏会话、answered/cleared 区分、密钥值不出现、view 压平确定性、无订阅者不占 seq、删群清卡、去重不重复 shown。
+
+### 已知边界
+
+- view 卡在手机上只读；手机要能答 view 卡需网关 `normalizeCard` 保留控件结构（第二批）。
+- 群内密钥卡不在本批（第二批）；own chat 密钥卡已投影，但手机端密钥输入界面未做。

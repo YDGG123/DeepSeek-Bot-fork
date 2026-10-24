@@ -294,6 +294,7 @@ export function install(rt) {
           ...(existing?.lastUsedAt !== undefined ? { lastUsedAt: existing.lastUsedAt } : {}),
         })
         settle(botId, request, 'saved')
+        rt.cardFeed?.answered(request.id)
         notes.push([botId, savedNote(request.name, `The user saved ${request.name} for ${scopeText(scope)}.`)])
         reconcile(request.name, notes, request)
         await commit(notes)
@@ -323,6 +324,7 @@ export function install(rt) {
       if (!canUse(secret, botId)) secret.scope = [...new Set([...secret.scope, botId])]
       secret.updatedAt = Date.now()
       settle(botId, request, 'allowed')
+      rt.cardFeed?.answered(request.id)
       const notes = [[botId, savedNote(request.name, `The user let you use ${request.name}.`)]]
       reconcile(request.name, notes, request)
       await commit(notes)

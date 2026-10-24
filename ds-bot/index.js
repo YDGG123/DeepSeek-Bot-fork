@@ -36,19 +36,20 @@ import * as thinking from './src/host/thinking.js'
 import * as channel from './src/host/channel.js'
 import * as feed from './src/host/feed.js'
 import * as teamFeed from './src/host/team-feed.js'
+import * as cardFeed from './src/host/card-feed.js'
 
 export { COLORS } from './src/host/constants.js'
 
 export const name = 'ds-bot'
 // The roster the mobile gateway reads: `ctx.get('dsBotTeam')` (see team-feed.js).
-export const provide = ['dsBotTeam']
+export const provide = ['dsBotTeam', 'dsBotCards']
 export const inject = ['llm', 'tools', 'systemPrompt', 'sessionController', 'sessions', 'sessionTitle', 'workspaceRegistry', 'connection']
 
 // Each module's install(rt) registers its listeners, tools, and effects, and puts on `rt`
 // the functions other modules call; they call them through `rt` at run time, never during
 // install. Listeners run and tools are listed in registration order, so this order holds:
 // usage meters model requests after every listener that rewrites them.
-const MODULES = [diagnostics, store, models, providers, permissions, turns, handoffs, delivery, roster, roomCards, teamFeed, folders, agents, prompt, timeContext, tools, chatIndex, groups, approvals, resume, memory, parts, images, secrets, connectors, capabilities, schedules, browser, usage, update, dshUpdate, thinking, feed, channel]
+const MODULES = [diagnostics, store, models, providers, permissions, turns, handoffs, delivery, roster, roomCards, teamFeed, cardFeed, folders, agents, prompt, timeContext, tools, chatIndex, groups, approvals, resume, memory, parts, images, secrets, connectors, capabilities, schedules, browser, usage, update, dshUpdate, thinking, feed, channel]
 
 export function apply(ctx, config = {}) {
   createRuntime(ctx, config)

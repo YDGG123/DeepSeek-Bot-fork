@@ -159,6 +159,8 @@ export function install(rt) {
     const what = card.kind === 'view' ? 'View card' : 'Question card'
     const line = answeredLine(reply)
     rt.appendRoomAnswer(room, `${what} answered${line === '' ? '' : `: ${line}`}`)
+    // The phone's card dock shows this as answered rather than cleared.
+    rt.cardFeed?.answered(card.id)
     await rt.save()
     return ok(true)
   }
@@ -425,6 +427,7 @@ export function install(rt) {
             state.questions[sessionId] ??= question
             throw error
           }
+          rt.cardFeed?.answered(question.id)
           await rt.save()
           return ok(true)
         }
@@ -458,6 +461,7 @@ export function install(rt) {
             state.views[sessionId] ??= pending
             throw error
           }
+          rt.cardFeed?.answered(pending.id)
           await rt.save()
           return ok(true)
         }
