@@ -179,7 +179,9 @@ text 是蓝图的纯文本压平（`src/shared/views.js` 的节点），确定�
 |---|---|---|
 | 回答提问卡 | `answer-question` | `{ sessionId, questionId: card.id, answer: { selected: [label…], custom? } }` |
 | 跳过提问卡 | `dismiss-question` | `{ sessionId, cardId: card.id }` |
-| 提交密钥 | `secret-set` | `{ requestId: card.id, value }`（值只走这条，绝不回传帧） |
+| 提交密钥 | `secret-set` | `{ requestId: card.id, value, scope: 'bot' }`（值只走这条，绝不回传帧） |
+
+> **`scope` 必填，默认 `'bot'`**：`secrets.js` 对「没有既有密钥」的请求，`body.scope` 缺省会按 `'all'` 落库，即**全团队可读**。手机端答密钥卡必须显式传 `'bot'`（只给提问的 Bot）；只有用户在手机上明确选择「全团队可用」时才传 `'all'`。这是安全默认值，不能由「没传」决定。
 
 `sessionId` 一律用帧里的值：own chat 卡 = Bot 对话 id；群内卡 = 群 id（ds-bot 的群分支按 room id 解析，回答会回到提问者的隐藏群会话）。
 view 卡 v1 不可答（§3.2），手机侧只展示。
