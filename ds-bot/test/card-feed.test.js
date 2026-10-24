@@ -224,6 +224,19 @@ test('the view blueprint is flattened to readable text, the same way every time'
   // Options and forms become text too: the phone keeps no controls in v1.
   assert.equal(viewText({ type: 'options', id: 'p', options: [{ label: 'A' }, { label: 'B' }] }), 'Options: A / B')
   assert.equal(viewText({ type: 'form', id: 'f', fields: [{ id: 'name', label: 'Name' }] }), 'Form: Name')
+  // Upstream 0.2.1's new view components flatten to one readable line each, so a group
+  // card projected to the phone loses no information.
+  assert.equal(viewText({ type: 'row', children: [{ type: 'metric', label: '完成', value: '70%' }] }), '完成: 70%')
+  assert.equal(viewText({ type: 'chart', kind: 'bar', categories: ['一月', '二月'], series: [{ name: '下载', values: [3, 5] }] }), 'Chart (bar)\nCategories: 一月, 二月\n下载: 3, 5')
+  assert.equal(viewText({ type: 'callout', text: '注意配额' }), '注意配额')
+  assert.equal(viewText({ type: 'sources', items: [{ label: '文档', url: 'https://example.com' }] }), '文档 https://example.com')
+  assert.equal(viewText({ type: 'slider', label: '阈值', min: 0, max: 10, value: 4 }), '阈值: 4')
+  assert.equal(viewText({ type: 'toggle', label: '通知', value: true }), '通知: on')
+  assert.equal(viewText({ type: 'choice', label: '渠道', options: [{ label: 'A' }, { label: 'B' }] }), '渠道: (A / B)')
+  assert.equal(viewText({ type: 'html', summary: '一段沙箱演示' }), '一段沙箱演示')
+  assert.equal(viewText({ type: 'submit', label: '发送' }), '[Submit: 发送]')
+  // A formula value shows as its stored source: the phone resolves nothing.
+  assert.equal(viewText({ type: 'metric', label: '合计', value: { '=': 'a * b' } }), '合计: =`a * b`')
 })
 
 test('without subscribers nothing is framed and seq stays put', async (t) => {
