@@ -248,7 +248,7 @@ test('the answer follows the member\'s current group Session after a part move',
 test('a display-only view is refused in a group and leaves no card', async (t) => {
   const host = await start(t)
   const text = await host.tool('show_view', { title: '信息', view: { type: 'text', text: '嗯' } }, 'gb', { callId: 'v1', concludeTurn() {} })
-  assert.equal(text, 'A display-only view cannot be shown in a group chat. Give the card controls (options, confirm, or form) so it waits for the user\'s answer, or write the content in your message.')
+  assert.equal(text, 'A display-only view cannot be shown in a group chat. Give the view controls (options, confirm, form, or submit) so it waits for the user\'s answer, or write the content in your message.')
   assert.equal(questions(host).length, 0)
 })
 
@@ -324,10 +324,10 @@ test('the tools, the prompt, and the view tell a Bot that a group card waits for
   const ask = host.ctx.registeredTools.get('ask_user')
   const show = host.ctx.registeredTools.get('show_view')
   assert.match(ask.description, /works in an own chat and in a group chat/)
-  assert.match(show.description, /In a group chat only an interactive card can be shown/)
+  assert.match(show.description, /In a group chat only a view with controls can be shown/)
   const prompt = host.ctx.sections.get('bot-identity').text({ agent: { id: 'b' } })
   assert.match(prompt, /In a group chat the card waits above the group's composer/)
-  assert.match(prompt, /In a group chat only a card with controls can be shown/)
+  assert.match(prompt, /In a group chat only a view with controls can be shown/)
   assert.doesNotMatch(prompt, /It only works in your own chat, not in a group/)
   // The view hands the group's queue to the desktop dock.
   await host.tool('ask_user', { question: '用哪个库？', options: [{ label: 'A' }] }, 'gb', { callId: 'q1', concludeTurn() {} })

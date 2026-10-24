@@ -95,7 +95,7 @@ test('show_view queues an interactive group card, refuses a display-only group c
 
   // A display-only blueprint has nowhere to live in a group.
   const displayOnly = await show('writer-group', { title: 'Meter', view: METER })
-  assert.equal(displayOnly.text, 'A display-only view cannot be shown in a group chat. Give the card controls (options, confirm, or form) so it waits for the user\'s answer, or write the content in your message.')
+  assert.equal(displayOnly.text, 'A display-only view cannot be shown in a group chat. Give the view controls (options, confirm, form, or submit) so it waits for the user\'s answer, or write the content in your message.')
   assert.equal(displayOnly.concluded, false)
   assert.equal((await team()).roomCards.r1.length, 1)
 
