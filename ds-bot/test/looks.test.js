@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
 import { test } from 'node:test'
-import { DEFAULT_COLORS, DEFAULT_SHAPES, MAIN_LOOK, defaultColor, defaultShape, lookOf } from '../src/client/characters.js'
+import { DEFAULT_COLORS, DEFAULT_SHAPES, MAIN_LOOK, colorOf, defaultColor, defaultShape, lookOf } from '../src/client/characters.js'
 import { indexRoster } from '../src/client/sources.js'
 
 const ids = Array.from({ length: 3000 }, (_, index) => `session-${index.toString(16).padStart(8, '0')}-look`)
@@ -27,6 +27,13 @@ test('the whale is only a stored look: the browser gives no Bot a look by its pl
   const photo = lookOf({ id: 'chief', avatar: { image: 'data:image/png;base64,AA==' } })
   assert.equal(photo.image, 'data:image/png;base64,AA==')
   assert.equal(photo.shape, defaultShape('chief'))
+  // A stored colour may be a hex value, and it passes through exactly as stored.
+  assert.equal(colorOf({ id: 'writer', color: '#1A2b3C' }), '#1A2b3C')
+  assert.equal(lookOf({ id: 'writer', color: '#1A2b3C' }).color, '#1A2b3C')
+  // Anything that is neither a named ink nor #rrggbb still leaves it to the id.
+  assert.equal(colorOf({ id: 'writer', color: 'chartreuse' }), defaultColor('writer'))
+  assert.equal(colorOf({ id: 'writer', color: '#12345' }), defaultColor('writer'))
+  assert.equal(colorOf({ id: 'writer', color: '#GGGGGG' }), defaultColor('writer'))
 })
 
 test('Bot settings is the only settings entry; nothing is called Team settings', () => {

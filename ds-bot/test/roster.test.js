@@ -266,6 +266,13 @@ test('a new team starts with a DeepSeek-blue whale as its Main Bot', async (t) =
   const after = (await call('state', {})).value.bots.find(bot => bot.id === writer.id)
   assert.equal(after.color, undefined)
   assert.equal(after.avatar, undefined)
+  // A stored colour may be a hex value as well, kept exactly as written.
+  const designer = (await call('create-bot', { name: 'Designer', role: '设计', color: '#1A2B3C' })).value
+  assert.equal(designer.color, '#1A2B3C')
+  // A colour that is neither a named ink nor #rrggbb cannot replace a stored one.
+  await call('update-bot', { id: designer.id, color: 'chartreuse' })
+  const kept = (await call('state', {})).value.bots.find(bot => bot.id === designer.id)
+  assert.equal(kept.color, '#1A2B3C')
 })
 
 const OLD_TEAM = {
