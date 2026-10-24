@@ -44,4 +44,5 @@
   等 CI 或真机给最终证明（QA 复核时的裁决，见 team-feed 的逐字段同源断言）。
 - 推送：无 fork 远端，**仅本地冻结**；若日后建 `DeepSeek-Bot-fork` 公开仓，
   本分支可直接 `git push <fork> integration/upstream-0.2.1`（直连 github.com 可用，
-  gh-proxy 的 fetch 通道实测不通）。本地 `upstream` remote 指官方仓库，注意勿误推。
+  gh-proxy 的 fetch 通道实测不通）。`upstream` remote 的 push 通道已禁用
+  （`DISABLED`，防误推官方仓库；fetch 保留用于日后拉上游）。
