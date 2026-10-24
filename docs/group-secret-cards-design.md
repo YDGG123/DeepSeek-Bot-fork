@@ -235,3 +235,20 @@ commit(notes)                                             // note 投回隐藏�
 同时修正了 §5.5 里「trim 只逐 settled」的错误说法（实际全 pending 时会逐最老 pending；群 pending 只在随卡逐出时取消）。
 
 `2bfa831` 另补四个缺口用例：成员移出 / 删 Bot 取消等待中的请求、trim 两种情形、`cardFeed.unanswered` 帧语义、stale note 丢弃。
+
+---
+
+## 13. 已知限制与取舍（排查索引）
+
+这些不是缺陷清单，是**明确接受的取舍**；将来排查先对照这里，别当成新 bug 重查一遍。
+
+1. **失败回滚只覆盖当前请求，镜像卡会闪一下**。`secret-set` / `secret-allow` / `secret-cancel` 失败时恢复当前 request 状态、把镜像卡放回、恢复内存密钥并重写 `secrets.json`。但卡是**先 `drop` 再 `restore`**，界面上会出现一次「卡片消失又回来」；`cardFeed` 用 `unanswered(id)` 撤销「已答」标记，若那一帧已经发出，手机端可能短暂显示已答再回到待答。**以重试后的最终帧为准。**
+2. **`reconcile` 波及的 request 不回滚**。commit 抛错时只回滚当前请求；同一密钥被 reconcile 顺带 settle 的其它请求（含群卡）留在内存已 settle，若 `state.json` 没落盘，重启后会回到 pending（而值可能已写入 `secrets.json`）。取舍：宁可让用户重答一次，不引入跨 request 的两阶段事务。
+3. **`RoomSecretDock` 卸载即丢输入**。切群、切会话或卡片队列变化会让组件 unmount，已输入但未提交的值随之丢失——与问题卡 dock、own chat 密钥卡一致，**不写 localStorage**，避免密钥落到浏览器存储。这是安全取舍。
+4. **手机端没有密钥输入界面**。`dsBotCards` 只投影 `name/description/save`，手机不提供作答入口；密钥作答只在桌面（view 卡同理）。后续要扩得同时改网关消费者协议与手机端输入页。
+5. **值的落盘时序**。`commit` 先 persist `secrets.json` 再 `rt.save`；`rt.save` 失败时按 §1 回滚并**再 persist 一次**（best effort）。若二次 persist 也失败，磁盘可能短暂残留该值（文件 600、且是用户自己的 key）；重启后会出现在「已保存」列表，可在设置页删除。
+6. **trim 的上限可以临时弯折**。全是 pending 且都是群卡时不会为了凑上限逐出（否则会留悬空卡）；列表可暂时超过 20 条，等出现 settled 记录后自然收敛。
+7. **note 丢失不阻塞收口**。投回隐藏群会话失败只 `warn`：值已落库、卡已出队是权威结果；提问者可能没收到「已保存」提示，但下一轮群发言照常继续。
+8. **取消 / 同名替换不写群日志行**。群日志只记录 `Key card answered: <NAME>`（不含值）；取消与替换与第一批的 skip 同口径，界面上靠卡片消失表达。
+9. **scope 缺省值因场景而异**。桌面群卡默认 `'bot'`（只给提问者），own chat 保持历史默认 `'all'`；手机契约强制显式 `scope:'bot'`。排查「为什么别的 Bot 用不了」先看这里。
+10. **镜像卡与 request 的崩溃窗口**。删群/移人/删 Bot 会在同一 tick 里先置 `canceled` 再删镜像卡；若进程恰在中间崩溃，由 `store.js` 迁移兜底：非成员/已删群的镜像卡会被丢弃，已 settled 的镜像卡不会复活。
