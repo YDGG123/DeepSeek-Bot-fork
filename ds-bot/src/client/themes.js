@@ -32,7 +32,8 @@ const THEMES = {
 // Text on the accent: near-black or white, whichever has the higher WCAG contrast.
 // (L + .05)² > 1.05 × (L(#141414) + .05) is "dark ink reads better".
 const DARK_INK = '#141414'
-const accentInk = accent => ((luminance(accent) + 0.05) ** 2 > 1.05 * (luminance(DARK_INK) + 0.05) ? DARK_INK : '#ffffff')
+// 角色符号压在真彩底上时用的墨色（白 / 近黑二选一）。导出供手机端对拍复用同一条规则。
+export const accentInk = accent => ((luminance(accent) + 0.05) ** 2 > 1.05 * (luminance(DARK_INK) + 0.05) ? DARK_INK : '#ffffff')
 const rgba = (hex, alpha) => `rgba(${[1, 3, 5].map(index => parseInt(hex.slice(index, index + 2), 16)).join(',')},${alpha})`
 function themeVars(mode, dark, accent = mode.accent) {
   return {
