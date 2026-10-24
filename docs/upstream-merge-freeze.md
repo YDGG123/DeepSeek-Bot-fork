@@ -46,3 +46,13 @@
   本分支可直接 `git push <fork> integration/upstream-0.2.1`（直连 github.com 可用，
   gh-proxy 的 fetch 通道实测不通）。`upstream` remote 的 push 通道已禁用
   （`DISABLED`，防误推官方仓库；fetch 保留用于日后拉上游）。
+
+## 证据更正（2026-10-25，Chief 确认）
+
+`dcc2a44` 的 commit message 写「shade opacity 0.14→0.5 变异使同源测试变红」——**对象指错了**。
+真实情况：glyphOf 是纯透传、测试 def 侧与发布侧引用同一张 SHAPES 表，该变异下
+glyph 同源断言恒真（结构同源时改源数据两侧同变）；**真正变红的是 client-bundle
+一致性闸门**（`client.js is the build of src/client`——源改了而已提交的 client.js
+未重建，986/1）。commit message 不改（重写会动 hash）；拷贝比较断言保留，作为
+「未来有人把 glyphOf 改成直接引用 layerDefs 不拷贝」的保险丝。手机端契约的
+真保护 = client-bundle 一致性闸门 + iOS 侧 path 夹具对拍。
