@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { createRuntime } from '../index.js'
+import { defaultColor, defaultShape } from '../src/client/characters.js'
 import { fakeContext } from './fake-ctx.js'
 
 // Chief (a) and Writer (b) are in group 'r1'; Writer speaks there from 'gb'. Tester (c)
@@ -32,10 +33,12 @@ const seed = () => ({
   revision: 0,
 })
 
-async function start(t, { timers = false, config = {} } = {}) {
+async function start(t, { timers = false, config = {}, seedPatch } = {}) {
   if (timers) t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
   const home = mkdtempSync(join(tmpdir(), 'ds-bot-teamfeed-'))
-  writeFileSync(join(home, 'state.json'), JSON.stringify(seed()))
+  const state = seed()
+  seedPatch?.(state)
+  writeFileSync(join(home, 'state.json'), JSON.stringify(state))
   const ctx = fakeContext()
   const provided = new Map()
   const sent = []
@@ -102,6 +105,37 @@ test('the feed is published as dsBotTeam and its snapshot carries the roster', a
   const ops = room(snap, 'r1')
   assert.deepEqual([ops.kind, ops.name, ops.mode, ops.admin, ops.notice], ['room', 'Ops', 'everyone', 'a', 'Be brief'])
   assert.deepEqual(ops.members, ['a', 'b'])
+})
+
+test('roster resolves avatar shape and color before publishing (single source of truth)', async (t) => {
+  const host = await start(t, {
+    seedPatch: state => {
+      // a：存值优先（用户选过角色 + 颜色）
+      state.bots.a.color = 'magenta'
+      state.bots.a.avatar = { shape: 'star' }
+      // b：带图片，shape 仍是解析后的角色 id
+      state.bots.b.avatar = { shape: 'acorn', image: 'data:image/png;base64,AA' }
+      // c：什么都没有 → host 必须按 bot id 推导出稳定值
+    },
+  })
+  const snap = host.rt.teamFeed.snapshot()
+
+  const chief = bot(snap, 'a')
+  assert.deepEqual([chief.avatar.shape, chief.color], ['star', 'magenta'])
+
+  const writer = bot(snap, 'b')
+  assert.deepEqual(writer.avatar, { shape: 'acorn', image: 'data:image/png;base64,AA' })
+
+  const tester = bot(snap, 'c')
+  assert.deepEqual([tester.avatar.shape, tester.color], [defaultShape('c'), defaultColor('c')])
+
+  // 契约：shape / color 必有值，读者不需要（也不应该）自己推导。
+  for (const entry of snap.bots) {
+    assert.equal(typeof entry.avatar?.shape, 'string')
+    assert.ok(entry.avatar.shape.length > 0)
+    assert.equal(typeof entry.color, 'string')
+    assert.ok(entry.color.length > 0)
+  }
 })
 
 test('snapshot never consumes seq, and a delta bases on the frame the reader applied', async (t) => {

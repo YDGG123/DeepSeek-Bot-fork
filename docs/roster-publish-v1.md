@@ -122,8 +122,8 @@ interface DsBotTeam {
 | `kind` | `"bot"` | 混排用 |
 | `name` | string | |
 | `role` | string | 角色标签 |
-| `color` | string? | ds-bot 调色板 key（`COLORS`/`EXTRA_COLORS`），手机端需同名映射 |
-| `avatar` | string? | data URL 或本地路径，**可能较大，只在快照里出现一次** |
+| `color` | string | **已解析**：ds-bot 调色板 key 或 hex；host 保证必有值（存值优先，缺省按 bot id 推导），手机端只映射不推导 |
+| `avatar` | `{ shape, image? }` | **`shape` 必有值且已解析**（角色 id，缺省按 bot id 推导）；`image` 是可选的 data URL，**可能较大，只在快照里出现一次** |
 | `model` | string? | `provider/model` |
 | `effort` | string? | 思考等级 |
 | `workDir` | string? | 工作目录（详情页） |
@@ -184,7 +184,8 @@ interface DsBotTeam {
 体积预估：20 Bot + 10 群快照约 2–6 KB（头像占大头，仅一次）；单条 patch 100–300 B；10 Bot 每秒各变 2 次约 4 KB/s，符合方案第四节。
 
 > **身份字段口径**：`mainBotId ≡ mainBotIds[0] ?? null`，两处必须同源（与 `channel.js:view()` 一致），不单独维护。
-> **头像**：`avatar` 是 data URL，只在快照里传；host 重启后 `instanceId` 变化、旧 seq 失效、必然重取快照，等于重新传一次——这个代价可接受，不做增量头像。
+> **头像**：`avatar` 是 `{ shape, image? }` 对象，`image` 是 data URL，只在快照里传；host 重启后 `instanceId` 变化、旧 seq 失效、必然重取快照，等于重新传一次——这个代价可接受，不做增量头像。
+> **头像与颜色不在读者侧推导（v2 起）**：host 用电脑端同一个 `lookOf()`（`src/client/characters.js`）在发布前就解析好 `avatar.shape` 与 `color`，缺省值由 bot id 稳定推导（FNV-1a + murmur3/mulberry32，同一 id 恒得同一形状/颜色）。读者**只渲染、不再推导**；此前手机端按名字兜底导致「同一 Bot 两端形状不同」，此条即为修法。
 
 ---
 

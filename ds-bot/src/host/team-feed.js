@@ -11,6 +11,10 @@
 // `seq`; `delta.base` is the seq of the last frame the reader applied; ordering for the
 // team page is the gateway's own session `updatedAt`, not our best-effort lastActivityAt.
 import { randomUUID } from 'node:crypto'
+// 头像/颜色的**唯一事实源**：与电脑端同一个 `lookOf`（纯函数，无 DOM 依赖）。
+// roster 下发前就把缺省的 shape / color 解析好，手机端只渲染、不推导 —— 否则
+// 「同一个 Bot 在电脑端和手机端形状不同」会一直复现（QA 实测）。
+import { lookOf } from '../client/characters.js'
 
 const RECONCILE_MS = 3_000
 const MAX_OPS = 200
@@ -106,6 +110,8 @@ export function install(rt) {
     const botEntities = new Map()
     for (const { bot, chat } of bots) {
       const doing = work[bot.id]
+      // 存值优先，缺省按 bot id 稳定推导（契约 v2 起 shape/color 必定有值）。
+      const look = lookOf(bot)
       const approvalLines = approvals.filter(entry => entry.botId === bot.id).map(entry => ({
         sessionId: entry.sessionId,
         ...(entry.roomId ? { roomId: entry.roomId } : {}),
@@ -120,8 +126,9 @@ export function install(rt) {
           kind: 'bot',
           name: bot.name,
           role: bot.role ?? '',
-          ...(bot.color ? { color: bot.color } : {}),
-          ...(bot.avatar !== undefined ? { avatar: bot.avatar } : {}),
+          color: look.color,
+          // 图片是可选的；shape 永远有值（读者不得再自行推导）。
+          avatar: look.image ? { shape: look.shape, image: look.image } : { shape: look.shape },
           ...(bot.model ? { model: bot.model } : {}),
           ...(bot.effort ? { effort: bot.effort } : {}),
           ...(bot.workDir ? { workDir: bot.workDir } : {}),
