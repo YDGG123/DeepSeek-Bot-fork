@@ -65,6 +65,9 @@ async function start(t, state = seed()) {
   ctx.connection.fetch.register = (options) => { route = options; return register(options) }
   const rt = createRuntime(ctx, { home, github: false, diagnosticsFile: false })
   await rt.load()
+  // show_view 上游改为按 agent 注册（shareBotTools）：出现一个 Bot 会话的 agent 才进注册表。
+  // 群会话也是 bot session（isBotSession = chatOwners + groupOwners），注册一次即可全局取到。
+  await ctx.emitAsync('agent/created', { agent: ctx.scopeAgent('gb') })
   t.after(async () => {
     await ctx.dispose()
     rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 })

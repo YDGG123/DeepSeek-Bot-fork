@@ -40,10 +40,12 @@ test('apply registers listeners, tools, and effects in a fixed order', (t) => {
     'on credentials/reference-updated',
     'on settings/document-updated',
     'on session/event',
-    'on tools/execute',
     'on session/event',
     'on agent/status',
     'effect ds-bot: team feed reconcile',
+    // privacy 的 tools/execute 在 MODULES 并集里位于我们的 roomCards/teamFeed/cardFeed
+    // 之后（上游没有这三件套时它紧跟 turns 的 session/event），故注册顺序靠后。
+    'on tools/execute',
     'effect ds-bot: agent tool restrict retry',
     'on agent/created',
     'effect ds-bot: identity section',
