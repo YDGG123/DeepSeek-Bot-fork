@@ -180,6 +180,7 @@ export function install(rt) {
   const NOTE_COOLDOWN_MS = [60_000, 300_000, 900_000]
   const SWITCH_ATTEMPTS = 5
   const OVERFLOW = 'CONTEXT_WINDOW_EXCEEDED'
+  const MODEL_SWITCH_COMPACTION = 'MODEL_SWITCH_COMPACTION_FAILED'
   // A failed connection says nothing about the conversation, so it never moves a part on.
   const STUCK_CODES = ['INVALID_REQUEST', 'IMAGE_OFFLOAD_REQUIRED']
   const ORIGINAL_COMPACT = Symbol.for('ds-bot/compaction')
@@ -1127,6 +1128,26 @@ export function install(rt) {
 
   ctx.on('agent/request-error', async (payload, next) => {
     if (payload.failure?.code !== OVERFLOW || payload.signal?.aborted) return next()
+    await rt.load()
+    const { agent } = payload
+    if (!rt.isBotSession(agent.id) || switches.has(agent.id) || readOnly()) return next()
+    const entry = rt.liveOf(agent.id)
+    entry.switched = true
+    startSwitch(agent, { resume: true, info: entry.info, joined: [...(entry.joined ?? [])], overflow: true })
+    return undefined
+  }, { prepend: true })
+
+  // Switching models must first bring the history below the destination model's
+  // threshold, and making that room in a Bot Session is DS Bot's own job: the
+  // compaction wrapper refuses, the switch fails whole, and it keeps failing — a
+  // failed request never commits its route, so every later request re-proposes the
+  // switch and the part can never answer again. The part moves on the way an
+  // overflow does, without waiting for a note the old part could still write: a
+  // fresh part is small, so the picked model serves its first request, and the
+  // stopped turn goes on there, with the user's message carried in the latest
+  // messages.
+  ctx.on('agent/request-error', async (payload, next) => {
+    if (payload.failure?.code !== MODEL_SWITCH_COMPACTION || payload.signal?.aborted) return next()
     await rt.load()
     const { agent } = payload
     if (!rt.isBotSession(agent.id) || switches.has(agent.id) || readOnly()) return next()
