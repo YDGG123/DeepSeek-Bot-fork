@@ -61,6 +61,7 @@ const unseenLines = (room, memberId) => {
 const noticeText = (line) => {
   if (line.reason === 'missed') return `${(line.names ?? []).join(' and ')} did not answer within ${line.minutes} minutes, so this round moved on without it. If it is still working, it posts its result later as a late reply; if it is urgent, the user can write here or the admin can follow up.`
   if (line.reason === 'paused') return `Paused: Bots have called each other ${line.limit} times since the user last wrote here. The calls to @${(line.names ?? []).join(' and @')} wait until the user continues or writes here; do not call them again.`
+  if (line.reason === 'model-switch') return `The switch to ${line.model} failed: the group's conversation does not fit that model's context window and room for it cannot be made here, so it stays on ${line.previous}. To change the model, pick one with a larger context window.`
   if (line.reason === 'admin-passed') return `${(line.names ?? []).join(' and ') || 'The admin'} did not answer or call anyone; call a member with @Name.`
   return line.text ?? ''
 }

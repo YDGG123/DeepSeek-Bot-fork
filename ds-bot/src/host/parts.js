@@ -675,6 +675,10 @@ export function install(rt) {
   const rescued = new Map()
   // Parts that have not started a turn yet, with their handoff package's size.
   const freshParts = new Map()
+  // Rooms whose model switch was undone, and the time before which a repeated
+  // failure is not undone again.
+  const switchRollbacks = new Map()
+  const ROLLBACK_RETRY_MS = 30_000
   // Context size where a part started, or where a checkpoint or a failed switch left
   // it. A part makes room again only once it grew by a quarter of the check line past
   // it, so a large system prompt or a broken switch cannot make it act every turn.
@@ -1138,23 +1142,58 @@ export function install(rt) {
   }, { prepend: true })
 
   // Switching models must first bring the history below the destination model's
-  // threshold, and making that room in a Bot Session is DS Bot's own job: the
-  // compaction wrapper refuses, the switch fails whole, and it keeps failing — a
-  // failed request never commits its route, so every later request re-proposes the
-  // switch and the part can never answer again. The part moves on the way an
-  // overflow does, without waiting for a note the old part could still write: a
-  // fresh part is small, so the picked model serves its first request, and the
-  // stopped turn goes on there, with the user's message carried in the latest
-  // messages.
+  // threshold, and making that room in a Session DS Bot keeps is DS Bot's own job:
+  // the compaction wrapper refuses (by the same two criteria this handler branches
+  // on), the switch fails whole, and it keeps failing — a failed request never
+  // commits its route, so every later request re-proposes the switch and nothing
+  // answers any more. The two kinds of Session recover differently:
+  // - a Bot's own or group Session moves on the way an overflow does, without
+  //   waiting for a note the old part could still write: a fresh part is small, so
+  //   the picked model serves its first request, and the stopped turn goes on there,
+  //   with the input carried in the latest messages;
+  // - a room's relay Session belongs to no Bot, so it cannot move to a part (the
+  //   room's identity is its Session id), and the switch is undone instead: the
+  //   selection goes back to the route the Session last served, the group is told,
+  //   and the failed step is retried — the retry proposes the committed route, which
+  //   the switch check skips.
   ctx.on('agent/request-error', async (payload, next) => {
     if (payload.failure?.code !== MODEL_SWITCH_COMPACTION || payload.signal?.aborted) return next()
     await rt.load()
     const { agent } = payload
-    if (!rt.isBotSession(agent.id) || switches.has(agent.id) || readOnly()) return next()
-    const entry = rt.liveOf(agent.id)
-    entry.switched = true
-    startSwitch(agent, { resume: true, info: entry.info, joined: [...(entry.joined ?? [])], overflow: true })
-    return undefined
+    if (rt.isBotSession(agent.id)) {
+      if (switches.has(agent.id) || readOnly()) return next()
+      const entry = rt.liveOf(agent.id)
+      entry.switched = true
+      startSwitch(agent, { resume: true, info: entry.info, joined: [...(entry.joined ?? [])], overflow: true })
+      return undefined
+    }
+    const room = rt.roomOf(agent.id)
+    if (room === undefined || readOnly()) return next()
+    // The retried request of a successful rollback cannot fail with this code again
+    // (the check skips equal routes), so a second failure this soon means the
+    // rollback did not hold, and another one would only loop.
+    if (Date.now() < (switchRollbacks.get(agent.id) ?? 0)) return next()
+    const kept = agent.session.requestHeader()?.config
+    try {
+      await rt.selectSessionModel(agent.id, {
+        provider: kept?.provider,
+        model: kept?.model,
+        ...(kept?.reasoningEffort === undefined ? {} : { reasoningEffort: kept.reasoningEffort }),
+      })
+    } catch (error) {
+      rt.warn('ds-bot: the model switch in %s could not be undone: %s', room.name, error)
+      return next()
+    }
+    switchRollbacks.set(agent.id, Date.now() + ROLLBACK_RETRY_MS)
+    rt.appendRoomLine(room, {
+      who: 'DS Bot',
+      kind: 'notice',
+      reason: 'model-switch',
+      model: /^Cannot switch to (\S+?): /.exec(payload.failure?.message ?? '')?.[1] ?? payload.provider,
+      previous: kept === undefined ? undefined : `${kept.provider}/${kept.model}`,
+    })
+    await rt.save()
+    return { kind: 'retry' }
   }, { prepend: true })
 
   // At the end of a turn past the check line, the steward decides once. Either way
