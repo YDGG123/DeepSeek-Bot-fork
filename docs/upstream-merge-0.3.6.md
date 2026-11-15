@@ -45,7 +45,7 @@
 | `src/host/groups.js` | 4 | ①整块取上游 ledger 基建（`say/rowOf/rowsView/noteFailure`），我们的 `appendRoomLine` 移植成 `say()` 直调；②我方 `waitingNames` 行 + 上游 `...placeLines(round, slot)`；③取上游（我们旧 relay 循环整段被 LEGACY 化取代），随后把 `waiting-answer` 槽位移植进上游 `memberTurn`（`slot.status='waiting-answer'` + `say({kind:'answer-pending'})`），`slotLabel` 补 waiting-answer 标注；④取上游 `{from, anchor}` 锚点回包（waitingAnswers 的去向见 B 类，见下） |
 | `src/host/parts.js` | 1 | 并集：我方 `MODEL_SWITCH_COMPACTION` + 上游 `NO_SUMMARY` 常量并存；`STUCK_CODES` 取上游（上游 `62034501` 有意收窄为只救 `IMAGE_OFFLOAD_REQUIRED`——该行本来就是上游的，不是自研件） |
 | `src/host/store.js` | 2 | ①state 形状并集：`sections:[]` + `closedCards:{}`（上游）+ `roomCards:{}`（我方）；②save 重构取上游（revision/snapshot 挪进写闭包防陈旧快照），我方 `teamFeed/cardFeed touch` 随迁进闭包 |
-| `src/host/tools.js` | 1 | 取我方：群卡分支（`groupOwners`→`addRoomCard`/`waitRoomTurn`/`concludeTurn`）+ hidden-turn `callId` 判定，是上游形态的严格超集 |
+| `src/host/tools.js` | 1 | 取我方：群卡分支（`groupOwners`→`addRoomCard`/`waitRoomTurn`/`concludeTurn`）；hidden-turn `callId` 判定**误取我方**（后按 Chief 对照法修掉，`6cfe689`——上游 0.3.x 已用 closedCards 替代该机制，见真回归节与定性修正记录） |
 | `test/install.test.js` | 1 | 注册顺序清单按 MODULES 并集推导 + 单测失败 diff 校正 |
 | `test/view-reply.test.js` | 1 | 取我方（上游测试标题断言的是"群内拒绝 show_view"——那是被我们判法否决的行为） |
 
@@ -72,14 +72,25 @@
 | 闸门 | 读数 | 退出码 |
 | --- | --- | --- |
 | `node scripts/build-client.mjs --check` | 一致 | 0 |
-| 全量测试 | **2251 例 / 2245 pass / 3 fail / 3 skip** | 1（3 fail 见下，非代码红） |
+| 全量测试（修复后终态，`6cfe689`） | **2251 例 / 2248 pass / 0 fail / 3 skip** | 0 |
 | `npm run lint` | 0 错误 / 75 警告 | 0 |
 
-**3 个 fail 的定性（防止将来误判为真红）**：`a card asked in a hidden Bot-to-Bot turn
-keeps its call id…`、`a hidden-turn card closes into closedCards at its call…`
-（group-secret-cards）与 `waiting hands over who a Bot waits for…`（handoffs）——
-三个都依赖 `settle()` 轮询（3 秒上限），全量并行负载下偶发超时。**单文件复跑
-17/17 全绿**（两连验证）。红在别处才是真问题。
+**中间态的 3 个 fail（定性修正记录，防止同样的误判再犯）**：修 hidden 判定之前全量
+曾有 3 红——`a card asked in a hidden Bot-to-Bot turn keeps its call id…`、
+`a hidden-turn card closes into closedCards at its call…`（group-secret-cards）与
+`waiting hands over who a Bot waits for…`（team-feed）。Dev 与 QA 都曾误判为
+「时序红」，Chief 用**换上游原版对照法**查穿：前两个是真 bug（合并时复活了上游
+0.3.x 已删除的 `tools.js` hidden 判定——callId 被剥掉后 `closeCard` 拒收，
+隐藏轮次答完的卡进不了 `closedCards`、重开窗口再弹，`6cfe689` 修复），第三个是
+适配缺口（上游 `handoffs.js:285` 给 waiting 加了 `waits` 字段，断言跟进即可）。
+修复后全量 **exit 0**，三个受影响套件隔离复跑 `questions + view-reply + team-feed`
+**23/23 绿**（`~/.dsh/node-v22/bin/node --import ./test/harness-resolve.mjs --test
+--test-timeout=120000 --test-force-exit "test/questions.test.js" "test/view-reply.test.js"
+"test/team-feed.test.js"`，exit=0）。
+
+**证据标准（本次预演的最大教训）**：判「时序红」必须附①隔离复跑的完整命令+输出
+（单跑绿只证明「当时没复现」，跨环境稳定红本身就反证时序）、②换上游原版代码跑
+一遍的对照结果（区分「上游本来就这样」vs「我们合并弄坏」）。缺一条不能定性。
 
 基线对照：合并前 1329 例 / 1327 pass / 0 fail / 2 skip。用例 +922、skip 2→3
 （3 个 skip 全是上游新增的 Windows 平台条件跳：`files.test.js:17/28`、
