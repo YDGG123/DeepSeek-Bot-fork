@@ -14,6 +14,7 @@
 // may use the key, and the mirror only for what the group is waiting on.
 import { randomUUID } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { SOURCE_KIND } from './constants.js'
 
 // What makes two cards the same, so a repeated call does not queue twice. Two
 // different questions from one member are both kept: a member that asked, was mentioned
@@ -77,6 +78,12 @@ export function install(rt) {
   // event in the header line. The source keeps the answer's own kind (so the member's
   // history reads it as an answer) and carries role 'room', which is what makes the
   // turn's output post into the group as a late reply.
+  //
+  // A format v4 Session message requires a producer-owned `source.kind`, and a caller
+  // that has no answer of its own (a skip, a secret note) passes no source. The defaults
+  // below supply it, so an omitted source cannot write an unreadable message into the
+  // member's log; an explicit source still wins. Upstream 0.3.x builds the same shape in
+  // delivery.js, so a card note and a relayed message reach the Session alike.
   const deliverCardNote = async (room, card, text, { note, source = {} } = {}) => {
     const sessionId = room.sessions?.[card.botId]
     if (sessionId === undefined) throw Object.assign(new Error('The member is no longer in this group chat'), { code: 'bot/stale' })
@@ -84,7 +91,7 @@ export function install(rt) {
     const agent = await rt.resolveAgent(sessionId)
     agent.followup(createUserMessage({
       content: [{ type: 'text', text: `[Group chat "${room.name}" · ${note}]\n${text}` }],
-      source: { ...source, role: 'room', roomId: room.id, exchangeId: randomUUID(), senderRoomId: room.id },
+      source: { kind: SOURCE_KIND, form: 'relay', senderName: 'You', ...source, role: 'room', roomId: room.id, exchangeId: randomUUID(), senderRoomId: room.id },
     }))
     await ctx.sessions.flush(agent.session)
   }

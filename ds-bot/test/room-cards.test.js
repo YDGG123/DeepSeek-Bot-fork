@@ -233,7 +233,10 @@ test('skipping a card tells the member, so its task resumes instead of waiting f
   assert.equal(sent.source.role, 'room')
   assert.match(text(sent), /skipped your question card/)
   // It is a note, not an answer: the member's history does not call it an answer.
-  assert.equal(sent.source.kind, undefined)
+  // The message still needs a producer-owned kind (DSH format v4), so it is a Bot
+  // message — anything but the reply kind that marks a card answer.
+  assert.notEqual(sent.source.kind, 'user-question-reply')
+  assert.equal(sent.source.kind, 'bot')
 })
 
 test('a plain group message leaves the waiting card alone', async (t) => {
