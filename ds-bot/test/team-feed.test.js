@@ -341,7 +341,9 @@ test('waiting hands over who a Bot waits for, and lastActivityAt is best effort'
   await sleep(20)
   const snap = host.rt.teamFeed.snapshot()
   const writer = bot(snap, 'b')
-  assert.deepEqual(writer.waiting, { bots: ['c'], rooms: [], for: ['a'] })
+  // Upstream handoffs.js added `waits` to the waiting shape: what each work
+  // waits on, with the target's id, name and room/to.
+  assert.deepEqual(writer.waiting, { bots: ['c'], rooms: [], for: ['a'], waits: [{ id: 'w2', name: 'Tester', to: 'c' }] })
   host.emit('gb', 'user/message', { content: [], source: { kind: 'room' } })
   await sleep(500)
   const after = host.rt.teamFeed.snapshot()

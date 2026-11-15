@@ -724,13 +724,13 @@ export function install(rt) {
           ? 'That question card is already waiting for the user in this group chat.'
           : 'The question card is waiting for the user above the group\'s composer. The other members carry on meanwhile; the answer arrives as a message to you after this turn.'
       }
-      // A hidden Bot-to-Bot turn shows none of its calls, so its card goes to the
-      // composer dock, which takes questions without a call.
-      const turn = rt.live.get(id)?.turn
-      const hidden = turn !== undefined && (state.exchangeTurns[id] ?? []).includes(turn)
+      // The card keeps its call id: upstream 0.3.x replaced the old "hidden turn
+      // drops the call id" scheme with closedCards (store.js closeCard), which
+      // refuses records without a string callId — dropping it here would leave
+      // answered cards out of closedCards and re-open them on the next launch.
       state.questions[id] = {
         id: randomUUID(),
-        ...(exec.callId && !hidden ? { callId: exec.callId } : {}),
+        ...(exec.callId ? { callId: exec.callId } : {}),
         ...question,
         askedAt: Date.now(),
       }
