@@ -6,7 +6,29 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { createRuntime } from '../index.js'
+import { roomCardsAt } from '../src/client/sources.js'
 import { fakeContext } from './fake-ctx.js'
+
+// The dock's card lookup: the backend keys roomCards by room.id, while the shell may
+// address the group by room.sessionId (rebuilt Session) — those differ in the group
+// that exposed this bug, and equal in every group the old tests happened to build.
+test('a group addressed by room.sessionId still finds its cards when room.id differs', () => {
+  const room = { id: 'session-room-id', sessionId: 'session-room-session', ownParts: ['session-room-id'] }
+  const cards = [{ id: 'q1', kind: 'question', botId: 'b', roomId: 'session-room-id', askedAt: 1 }]
+  const roomsById = {}
+  for (const r of [room]) for (const id of [r.id, r.sessionId, ...(r.ownParts ?? [])]) roomsById[id] = r
+  const roster = { rooms: [room], roomCards: { 'session-room-id': cards }, roomsById }
+
+  // The old equal-ids shape still hits directly.
+  assert.equal(roomCardsAt(roster, 'session-room-id'), cards)
+  // The rebuilt-Session shape: addressed by room.sessionId, cards stored under room.id.
+  // This was undefined before the fallback — the bug that hid the group's cards.
+  assert.equal(roomCardsAt(roster, 'session-room-session'), cards)
+  // An earlier part id resolves the same way.
+  assert.equal(roomCardsAt(roster, 'session-room-id'), cards)
+  // An unrelated Session id finds nothing.
+  assert.equal(roomCardsAt(roster, 'session-something-else'), undefined)
+})
 
 // Chief is the admin of group 'r1' and speaks there from 'ga'; Writer from 'gb'; Tester
 // from 'gc'. Everyone answers a plain message in turn (mode 'everyone').

@@ -6,7 +6,7 @@ import { AnsweredCell, SettledQuestion } from './questions.js'
 import { useDockHold } from './card-hold.js'
 import { SettledHandoff } from './handoff-card.js'
 import { SettledComputerHandoff } from './computer.js'
-import { heldCardKey } from './sources.js'
+import { heldCardKey, roomCardsAt } from './sources.js'
 import { WidgetCard, ViewUi, DEEP_VIEW_CSS, WidgetView as CoreWidgetView, ViewMenuList as CoreViewMenuList } from 'deep-view/react'
 import { checkShownView } from 'deep-view/core'
 
@@ -84,7 +84,7 @@ export function ClosedView({ title, closed }) {
 const ROOM_WAIT_NOTE_MS = 30 * 60 * 1000
 
 function RoomViewDock({ roomId, useRoster, actions }) {
-  const all = useRoster(value => value.roomCards?.[roomId])
+  const all = useRoster(value => roomCardsAt(value, roomId))
   const [turn, setTurn] = useState(0)
   const cards = (all ?? []).filter(card => card.kind === 'view')
   if (cards.length === 0) return null

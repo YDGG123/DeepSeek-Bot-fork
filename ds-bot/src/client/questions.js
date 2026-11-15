@@ -4,7 +4,7 @@ import { CellEmpty } from './cell-empty.js'
 import { sendsOnEnter } from './enter-key.js'
 import { t } from './i18n.js'
 import { useDockHold } from './card-hold.js'
-import { createSource, heldCardKey } from './sources.js'
+import { createSource, heldCardKey, roomCardsAt } from './sources.js'
 
 // -------------------------------------------------------------------------
 // Question cards. `ask_user` cards sit in the transcript and never block the Bot;
@@ -215,7 +215,7 @@ export function PendingQuestion({ sessionId, question, actions, inline, enterToS
 const WAIT_NOTE_MS = 30 * 60 * 1000
 
 function RoomQuestionDock({ roomId, useRoster, actions }) {
-  const cards = useRoster(value => value.roomCards?.[roomId])
+  const cards = useRoster(value => roomCardsAt(value, roomId))
   const enterToSend = useRoster(value => sendsOnEnter(value.prefs))
   const [turn, setTurn] = useState(0)
   if (cards === undefined || cards.length === 0) return null

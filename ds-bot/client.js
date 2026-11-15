@@ -13765,6 +13765,7 @@ function indexRoster(value) {
   }
   return { ...value, agents: value.agents ?? [], sections: value.sections ?? [], byId, roomsById, agentsById, agentOf, ready: true };
 }
+var roomCardsAt = (roster, sessionId) => roster.roomCards?.[sessionId] ?? roster.roomCards?.[roster.roomsById?.[sessionId]?.id];
 function isAgentSession(roster, cache, sessionId) {
   if (sessionId === void 0 || sessionId === null || sessionId === "") return false;
   if (roster.ready) return roster.agentOf[sessionId] !== void 0;
@@ -17487,7 +17488,7 @@ function PendingQuestion({ sessionId, question, actions, inline, enterToSend = t
 }
 var WAIT_NOTE_MS = 30 * 60 * 1e3;
 function RoomQuestionDock({ roomId, useRoster, actions }) {
-  const cards = useRoster((value) => value.roomCards?.[roomId]);
+  const cards = useRoster((value) => roomCardsAt(value, roomId));
   const enterToSend = useRoster((value) => sendsOnEnter(value.prefs));
   const [turn, setTurn] = (0, import_react9.useState)(0);
   if (cards === void 0 || cards.length === 0) return null;
@@ -20645,7 +20646,7 @@ function ClosedView({ title, closed }) {
 }
 var ROOM_WAIT_NOTE_MS = 30 * 60 * 1e3;
 function RoomViewDock({ roomId, useRoster, actions }) {
-  const all = useRoster((value) => value.roomCards?.[roomId]);
+  const all = useRoster((value) => roomCardsAt(value, roomId));
   const [turn, setTurn] = (0, import_react16.useState)(0);
   const cards = (all ?? []).filter((card2) => card2.kind === "view");
   if (cards.length === 0) return null;
