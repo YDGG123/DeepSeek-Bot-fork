@@ -91,11 +91,11 @@ export function install(rt) {
 
   // The user's choice goes into the group log, so the members' next turns and
   // read_group_chat see it after the round that asked is long over. It is a `kind` line,
-  // which the preview leaves out, and it joins a running round's replies when there is one.
+  // which the preview leaves out. The ledger is the record now: the group view reads the
+  // line back through rowsView/groupRows, so nothing else is needed at write time.
   const appendAnswerLine = (room, text) => {
     if (typeof rt.appendRoomLine !== 'function') return
-    const line = { who: 'User', kind: 'answer', text }
-    rt.appendRoomLine(room, line, { reply: { kind: 'answer', text, time: Date.now() } })
+    rt.appendRoomLine(room, { who: 'User', kind: 'answer', text })
   }
 
   // What the phone and the group view may know about waiting cards, without their text.

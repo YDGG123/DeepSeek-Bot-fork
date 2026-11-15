@@ -154,10 +154,14 @@ test('a member asking in a round keeps its slot waiting while the next member sp
   await settle(() => host.agentOf('gc').calls.length === 1)
   const slots = host.rt.roomProgress.get('c1').slots.map(slot => [slot.id, slot.status])
   assert.deepEqual(slots, [['a', 'posted'], ['b', 'waiting-answer'], ['c', 'speaking']])
-  host.begin('gc')
+  const gcMessage = host.begin('gc')
   host.finish('gc', '我看 B 更稳。')
   await settle(() => done() !== undefined)
-  assert.deepEqual(done().waitingAnswers, [{ botId: 'b', name: 'Writer', kind: 'question' }])
+  // The relay call returns its ledger anchor now; the waiting member is told in the
+  // round brief instead (roomPrompt's waitingNames line), so a later round does not
+  // read its silence as a pass.
+  const gcText = (gcMessage?.content ?? []).find(block => block.type === 'text')?.text ?? ''
+  assert.match(gcText, /Waiting for the user's answer to a question card: Writer\./)
   assert.equal(host.rt.state.questions.gb, undefined)
 })
 
@@ -183,6 +187,24 @@ test('the answer goes back to the member\'s hidden group Session and lands in th
   const again = await host.call('answer-question', { sessionId: 'r1', questionId: cardId, answer: { selected: ['A'] } })
   assert.equal(again.ok, false)
   assert.equal(again.error.code, 'bot/stale')
+})
+
+test('an answer line keeps its text when the group view reads it back from the ledger', async (t) => {
+  const host = await start(t)
+  const room = host.rt.state.rooms.r1
+  host.rt.appendRoomLine(room, { who: 'User', kind: 'answer', text: '我看 B 更稳。' })
+  await host.rt.save()
+  // The read path the group view consumes (rowsView → rowOf): the generic kind
+  // pass-through must carry the text, or the user's choice renders as a blank row.
+  const rows = await host.rt.groupRows('r1', 0)
+  const answer = rows.find(row => row.kind === 'answer')
+  assert.notEqual(answer, undefined)
+  assert.equal(answer.text, '我看 B 更稳。')
+  // The members' own path (room.log via memberLine): the answer must not be
+  // classified as a show-only row, or later rounds never read the user's choice.
+  const inLog = room.log.find(line => line.kind === 'answer')
+  assert.notEqual(inLog, undefined)
+  assert.equal(inLog.text, '我看 B 更稳。')
 })
 
 test('a view card answers the same way and validates its values', async (t) => {

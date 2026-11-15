@@ -306,7 +306,10 @@ export function install(rt) {
       return { ...who, text: record.text, time, ...(record.duration === undefined ? {} : { duration: record.duration }) }
     }
     if (record.kind === 'lookup') return { kind: 'lookup', ...who, text: record.text, time }
-    if (record.kind !== 'notice') return { kind: record.kind, ...who, time }
+    // The generic pass-through also carries the text: a line of ours may bring one
+    // (the user's `answer` card reply does), and the group view renders it. Upstream's
+    // own kinds (approval/working) have none, so the field is only set when present.
+    if (record.kind !== 'notice') return { kind: record.kind, ...who, time, ...(record.text === undefined ? {} : { text: record.text }) }
     switch (record.reason) {
       case 'failed': return { kind: 'failed', ...who, code: record.code, ...(record.status ? { status: record.status } : {}), text: record.message ?? record.detail, time }
       case 'missed': return { kind: 'missed', ...who, time }

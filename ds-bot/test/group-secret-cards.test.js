@@ -139,10 +139,14 @@ test('the asking member\'s slot waits while the other members carry on', async (
   await settle(() => host.delivered.some(entry => entry.sessionId === 'gc'))
   const slots = host.rt.roomProgress.get('c1').slots.map(slot => [slot.id, slot.status])
   assert.deepEqual(slots, [['a', 'posted'], ['b', 'waiting-answer'], ['c', 'speaking']])
-  host.begin('gc')
+  const gcMessage = host.begin('gc')
   host.finish('gc', '我看行。')
   await settle(() => done() !== undefined)
-  assert.deepEqual(done().waitingAnswers, [{ botId: 'b', name: 'Writer', kind: 'secret' }])
+  // The relay call returns its ledger anchor now; the waiting member is told in the
+  // round brief instead (roomPrompt's waitingNames line), so a later round does not
+  // read its silence as a pass.
+  const gcText = (gcMessage?.content ?? []).find(block => block.type === 'text')?.text ?? ''
+  assert.match(gcText, /Waiting for the user's answer to a question card: Writer\./)
 })
 
 test('saving the key keeps it for the asking Bot only and tells it in the group', async (t) => {
