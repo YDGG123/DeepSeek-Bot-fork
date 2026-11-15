@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { test } from 'node:test'
-import { apply } from '../index.js'
+import { createRuntime } from '../index.js'
 import { fakeContext } from './fake-ctx.js'
 
 // A model switch has to bring the history below the destination model's threshold
@@ -153,7 +153,7 @@ async function start(seed) {
     sessionTitle: { rename: async () => {} },
     sessions: { flush: async () => {} },
   })
-  apply(ctx, { home })
+  const rt = createRuntime(ctx, { home })
   const emit = (id, type, data) => {
     const seq = (seqs.get(id) ?? 0) + 1
     seqs.set(id, seq)
@@ -173,7 +173,7 @@ async function start(seed) {
       : listeners[index](payload, () => run(index + 1))
     return run(0)
   }
-  const tool = (name, args, sessionId) => ctx.registeredTools.get(name).execute(args, { agent: { id: sessionId } })
+  const tool = (name, args, sessionId) => (rt.teamTools.find(d => d.name === name) ?? ctx.registeredTools.get(name)).execute(args, { agent: { id: sessionId } })
   const state = () => JSON.parse(readFileSync(join(home, 'state.json'), 'utf8'))
   const stop = async () => {
     await ctx.dispose()
@@ -181,7 +181,7 @@ async function start(seed) {
   }
   // Loading once fills the Session-owner indexes the request-error handlers filter by.
   await tool('list_bots', {}, 'a')
-  return { ctx, agents, agentOf, emit, fire, archived, logs, selects, fail, warnings, state, stop }
+  return { ctx, rt, agents, agentOf, emit, fire, archived, logs, selects, fail, warnings, state, stop }
 }
 
 const textOf = content => content.map(block => block.text ?? '').join('\n')
