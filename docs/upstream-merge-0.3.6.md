@@ -61,7 +61,7 @@
 | 群聊卡片 | `room-cards.js` 123 行零改动；`channel.js:95 roomCards` 投影 + `:237 roomCardFor`；`groups.js:1127` waiting-answer 槽位（移植进上游 `memberTurn`）；`rt.appendRoomLine` 走 `say()`；`slotLabel` waiting-answer 标注；`rowOf` 透传带 text（本次回归修复，见下） |
 | 团队馈送 | `team-feed.js` 348 行零改动；`ctx.provide('dsBotTeam')` 在 `:347` |
 | 卡片馈送 | `card-feed.js` 263 行零改动；`ctx.provide('dsBotCards')` 在 `:262`；`store.js` save 闭包里的 `cardFeed.touch()` 随上游重构迁移 |
-| 群密钥卡 | 上游这轮**大改了 secrets.js**（相对 v0.2.4 −154/+32），我们的增量（相对 v0.3.6 +135/−18）经自动合并与其并存；`secretEndpoint` 在 `:480`；17 例套件全绿 |
+| 群密钥卡 | 上游这轮**小幅改了 secrets.js**（纯上游变化，`v0.2.4..v0.3.6`：+14/−19），我们的增量（`v0.2.4..93fc5cb`：+135/−18）经自动合并**原样保住**，合并后合计（`v0.2.4..HEAD`：+149/−37，恰为两者之和——干净并存，无互相覆盖）；`secretEndpoint` 在 `:480`；17 例套件全绿 |
 | glyph 头像 | `characters.js:84 layerDefs` 派生循环保留（上游的 .07 软化未采纳，视觉取舍待产品裁决）；`team-feed.js:36` 消费 layerDefs 在位 |
 
 ## 闸门读数
